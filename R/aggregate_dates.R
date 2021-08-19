@@ -24,4 +24,5 @@ aggregate_dates <- function(x, y, n) {
       ncol = y,
     )
   }
+  return(dat)
 }
