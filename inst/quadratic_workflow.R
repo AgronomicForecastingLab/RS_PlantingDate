@@ -1,4 +1,4 @@
-# Package workflow demo:
+# Quadratic equation prediction workflow:
 
 devtools::install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies=TRUE)
 
