@@ -6,7 +6,7 @@
 #' @param x x-dimension (width) of the NDVI images.
 #' @param y y-dimension(length) of the NDVI images.
 #' @param n number of observed dates.
-#' @return A x-y-n matrix of NDVI data. 
+#' @return A x-y-n matrix of NDVI data.
 #' @export
 aggregate_dates <- function(x, y, n) {
   # Read in all the adequate NDVI images into one array.
@@ -17,7 +17,7 @@ aggregate_dates <- function(x, y, n) {
     print(i)
     f = stack(files[i])
     mat = as.matrix(f)
-    dat[,,i] = matrix(
+    dat[, , i] = matrix(
       data = mat[, 1],
       byrow = T,
       nrow = x,

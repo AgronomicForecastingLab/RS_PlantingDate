@@ -40,7 +40,7 @@ clean_monotonic <- function(orig_df, ID_list) {
     # Convert rem_rows list from `this` rownames to `temp` rownames.
     rem_exes <- c()
     for (i in 1:length(rem_rows)) {
-      rem_exes <- c(rem_exes, this[rem_rows[i], ]$X)
+      rem_exes <- c(rem_exes, this[rem_rows[i],]$X)
     }
     
     # Filter divergent data points from `temp`.

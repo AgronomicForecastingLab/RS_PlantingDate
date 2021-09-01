@@ -1,6 +1,7 @@
 # Quadratic equation prediction workflow:
 
-devtools::install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies=TRUE)
+devtools::install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies =
+                           TRUE)
 
 # Aggregate all adequate NDVI image into a x-y-n array.
 dat <- aggregate_dates(9211, 7305, 24)
@@ -43,7 +44,7 @@ fA = function(dos, t, N, minNDVI) {
   pred = -0.00013 * (t - dos) ^ 2 + 0.01787 * (t - dos) + minNDVI
   pred[pred < minNDVI] = minNDVI
   sqError = (N - pred) ^ 2
-  return(sqrt(mean(sqError, na.rm=TRUE)))
+  return(sqrt(mean(sqError, na.rm = TRUE)))
 }
 A = function(dos, t, minNDVI) {
   pred = -0.00013 * (t - dos) ^ 2 + 0.01787 * (t - dos) + minNDVI
@@ -54,7 +55,7 @@ fB = function(dos, t, N, minNDVI) {
   pred = -0.00014 * (t - dos) ^ 2 + 0.01931 * (t - dos) + minNDVI
   pred[pred < minNDVI] = minNDVI
   sqError = (N - pred) ^ 2
-  return(sqrt(mean(sqError, na.rm=TRUE)))
+  return(sqrt(mean(sqError, na.rm = TRUE)))
 }
 B = function(dos, t, minNDVI) {
   pred = -0.00014 * (t - dos) ^ 2 + 0.01931 * (t - dos) + minNDVI
