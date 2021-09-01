@@ -1,13 +1,13 @@
-# Double-logistic equation prediction workflow:
-
-devtools::install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies =
-                           TRUE)
-
 require(tidyverse)
 require(GGally)
 require(phenopix)
 require(zoo)
 require(greenbrown)
+
+# Double-logistic equation prediction workflow:
+
+devtools::install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies =
+                           TRUE)
 
 overwrite = F
 # The Beck's Hybrids dataset should be named 'cleanedData.csv'.
@@ -85,9 +85,9 @@ dlog.data <- fit_double_logistic(dlog.data)
 ggpairs(dlog.data %>% filter(rmse < 0.2), columns = c(2:7, 11, 12, 9, 8))
 mod1 = lm(dos ~ eos + lat , data = dlog.data %>% filter(rmse < 0.15))
 summary(mod1)
-# RMSE: 13.5
+# RMSE: ~13.5
 
-# Optimize the dl function for each test plot with corn.
+# Optimize the DLOG function for each test plot with corn.
 test.corn = test %>%
   mutate(dos = as.integer(as.Date(PLANTED) - as.Date('2016-12-31')),
          DOY = as.integer(as.Date(Date) - as.Date('2016-12-31')))
@@ -97,8 +97,8 @@ for (i in 1:length(test.cornids)) {
   print(i)
   this = test.corn %>% filter(ID == test.cornids[i]) %>% distinct(DOY, .keep_all = TRUE)
   
-  # fit model based on Beck's equation
-  opt = try(FitDoubleLog(
+  # Fit the model based on Beck's equation.
+  opt = try(optimize_double_log(
     x = this$NDVI,
     t = this$DOY,
     weighting = TRUE,
@@ -106,9 +106,9 @@ for (i in 1:length(test.cornids)) {
   ),
   silent = T)
   
-  # if we are not able to fit the model, we should try once more and then skip it if still bad
+  # If we can't fit the model, we should try again, then skip it's still bad.
   if (is.na(opt[2])) {
-    opt = try(FitDoubleLog(
+    opt = try(optimize_double_log(
       x = this$NDVI,
       t = this$DOY,
       weighting = TRUE,
