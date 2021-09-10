@@ -55,6 +55,7 @@ fit_double_logistic <- function(x, t) {
     rau =  as.numeric(mod[6]),
     dos = this$dos[1],
     lat = this$Latitude[1],
+    lon = this$Longitude[1],
     maxDOY = which.max(preds)
   )
   return(res)

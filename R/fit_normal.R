@@ -28,7 +28,8 @@ fit_normal <- function(x, t) {
                    sigma = summary(res)$parameters[2,1],
                    k = summary(res)$parameters[3,1],
                    dos = this$dos[1],
-                   lat = this$Latitude[1])
+                   lat = this$Latitude[1], 
+                   lon = this$Longitude[1])
   
   return(res)
 }
