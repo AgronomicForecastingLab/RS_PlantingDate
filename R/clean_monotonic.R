@@ -80,15 +80,15 @@ clean_monotonic <- function(orig_df) {
       }
     }
     
-    # if (i %% 30 == 0){
-    #   p = ggplot() + 
-    #     geom_point(data = this, aes(x = Date, y = NDVI), col = 'black') +
-    #     geom_point(data = reduced, aes(x = Date, y = NDVI), col = 'red') +
-    #     geom_line(data = this, aes(x = Date, y = NDVI), col = 'black') +
-    #     geom_line(data = reduced, aes(x = Date, y = NDVI), col = 'red') 
-    #   print(p)
-    #   Sys.sleep(5)
-    # }
+    if (i %% 30 == 0){
+       p = ggplot() + 
+         geom_point(data = this, aes(x = Date, y = NDVI), col = 'black') +
+         geom_point(data = reduced, aes(x = Date, y = NDVI), col = 'red') +
+         geom_line(data = this, aes(x = Date, y = NDVI), col = 'black') +
+         geom_line(data = reduced, aes(x = Date, y = NDVI), col = 'red') 
+       print(p)
+       Sys.sleep(5)
+     }
     
     # Now let's remove the rem_rows indices from the original dataset
     orig_df = orig_df %>% filter(!orig_row %in% rem_rows)
