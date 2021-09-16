@@ -10,9 +10,11 @@
 #' @export
 clean_monotonic <- function(orig_df) {
   
+  # Add original row numbers as a column.
   orig_df = orig_df %>% 
     rownames_to_column('orig_row') %>%
     mutate(orig_row = as.numeric(orig_row))
+  
   ID_list = unique(orig_df$ID)
   pb = txtProgressBar(0, 1, style=3)
   
@@ -20,79 +22,79 @@ clean_monotonic <- function(orig_df) {
   for (i in 1:length(ID_list)) {
     setTxtProgressBar(pb, i/length(ID_list))
     
+    # Data frame with data for ID `ID_list[i]`.
     this = orig_df %>% filter(ID == ID_list[i]) 
     
-    # Are there any values before April that are not in the bare soil range?
+    # Remove any values before April with NDVI values greater than 0.3.
     # Here I'm using the range given for bare soil in Mzid et al. (2021)
-    bad <- this %>% filter(Date < as.Date('2017-04-01'), NDVI > 0.3)
+    bad <- this %>% filter(Date < as.Date('2017-04-01') & NDVI > 0.3)
     if (nrow(bad) > 0){
-      reduced <- this %>% filter(!(orig_row %in% bad$orig_row))
-    }else{
-      reduced <- this
+      this <- this %>% filter(!(orig_row %in% bad$orig_row))
     }
     
     # Find the highest NDVI value for this point (as the median data point).
-    maxNDVI = max(reduced$NDVI)
-    first = min(reduced$orig_row)
-    last = max(reduced$orig_row)
-    mn_index = reduced$orig_row[which(reduced$NDVI == maxNDVI)]
+    maxNDVI = max(this$NDVI)
+    first = min(this$orig_row)
+    last = max(this$orig_row)
+    max_index = this$orig_row[which(this$NDVI == maxNDVI)]
     
-    if (length(mn_index) == 0) {
+    if (length(max_index) == 0) {
       next
     }
-    if (length(mn_index) > 1){
+    
+    if (length(max_index) > 1) {
       print(i)
       break
     }
     
     # Start a vector of original df rows to remove 
-    if (nrow(bad) > 0){
+    rem_rows <- c()
+    if (nrow(bad) > 0) {
       rem_rows <- c(bad$orig_row)
-    }else{ 
-      rem_rows <- c()
     }
     
-    # Iterate through all the points 
-    for (j in first:last){
+    # Iterate through all data points.
+    for (j in first:last) {
       
-      # check to see if we have removed this point 
+      # Check to see if we've already removed this point.
       if (!(j %in% reduced$orig_row)) next
       
-      # if this is max, we can skip
-      if (j == mn_index) next
+      # If this point is the max NDVI point, skip. 
+      if (j == max_index) next
       
-      # if less than max, we check for increasing with all points up through max
-      if (j < mn_index){
-        inds = (reduced %>% filter(orig_row > j, orig_row <= mn_index))$orig_row
-        diffs <- (reduced %>% filter(orig_row %in% inds))$NDVI - (reduced %>% filter(orig_row == j))$NDVI
+      # If less than max, we check for increasing for all points up through max.
+      if (j < max_index) {
+        inds = (this %>% filter(orig_row > j, orig_row <= max_index))$orig_row
+        diffs <- (this %>% filter(orig_row %in% inds))$NDVI - (this %>% filter(orig_row == j))$NDVI
         if (any(diffs < 0)){
+          ## Only remove rows with a decrease of greater than 0.1
           rem_rows <- c(rem_rows,inds[which(diffs < -0.1)])
-          reduced = reduced %>% filter(!(orig_row %in% rem_rows))
+          this = this %>% filter(!(orig_row %in% rem_rows))
         }
-      }else{
-        # after mn_index we check for decreasing 
-        inds = (reduced %>% filter(orig_row > j))$orig_row
-        diffs <- (reduced %>% filter(orig_row %in% inds))$NDVI - (reduced %>% filter(orig_row == j))$NDVI
+      } else {
+        # If this point is after max_index, we check for monotonic decreasing.
+        inds = (this %>% filter(orig_row > j))$orig_row
+        diffs <- (this %>% filter(orig_row %in% inds))$NDVI - (this %>% filter(orig_row == j))$NDVI
         if (any(diffs > 0)){
           rem_rows <- c(rem_rows,inds[which(diffs > 0.1)])
-          reduced = reduced %>% filter(!(orig_row %in% rem_rows))
+          this = this %>% filter(!(orig_row %in% rem_rows))
         }
       }
     }
     
     if (i %% 30 == 0){
+       before = orig_df %>% filter(ID == ID_list[i]) 
        p = ggplot() + 
          geom_point(data = this, aes(x = Date, y = NDVI), col = 'black') +
-         geom_point(data = reduced, aes(x = Date, y = NDVI), col = 'red') +
+         geom_point(data = before, aes(x = Date, y = NDVI), col = 'red') +
          geom_line(data = this, aes(x = Date, y = NDVI), col = 'black') +
-         geom_line(data = reduced, aes(x = Date, y = NDVI), col = 'red') 
+         geom_line(data = before, aes(x = Date, y = NDVI), col = 'red') 
        print(p)
        Sys.sleep(5)
      }
     
-    # Now let's remove the rem_rows indices from the original dataset
+    # Remove the rem_rows indices from the original dataset.
     orig_df = orig_df %>% filter(!orig_row %in% rem_rows)
-    
   }
   
   return(orig_df %>% dplyr::select(-orig_row))
