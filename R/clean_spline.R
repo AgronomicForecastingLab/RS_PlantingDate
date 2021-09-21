@@ -31,6 +31,11 @@ clean_WLS <- function(orig_df) {
     bad <- this %>% dplyr::filter(Date < as.Date('2017-06-01') & NDVI > 0.3)
     if (nrow(bad) > 0) this <- this %>% dplyr::filter(!(orig_row %in% bad$orig_row))
     
+    # Remove any values after October with NDVI values greater than 0.3.
+    # Here I'm using the range given for bare soil in Mzid et al. (2021)
+    bad <- this %>% dplyr::filter(Date > as.Date('2017-10-31') & NDVI > 0.3)
+    if (nrow(bad) > 0) this <- this %>% dplyr::filter(!(orig_row %in% bad$orig_row))
+    
     if (nrow(this) < 4) next
     
     # Convert from formatted date to Julian days. 
@@ -89,5 +94,6 @@ clean_WLS <- function(orig_df) {
   }
   
   new_df = new_df[-1,]
-  return(new_df)
+  return(new_df %>% dplyr::select(-orig_row))
+
 }

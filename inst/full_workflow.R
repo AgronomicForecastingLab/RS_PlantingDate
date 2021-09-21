@@ -5,27 +5,86 @@ require(zoo)
 require(greenbrown)
 require(RSPlantingDate)
 
-# Model fitting and prediction workflow
-
-# perhaps there's an issue here with how we are representing the relationship with latitude... or there is a regional pattern? 
-# I'm not sure why there's such a divide in how we are predicting the low DOS and the high DOS. 
-
-#devtools::install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies = TRUE)
-#overwrite = F
+# Data cleaning and fitting workflow with the double logistic function
 
 rm(list=ls())
-################################################
-#### Load prepared data
-################################################
+set.seed(102396)
 
-load('inst/data/monotonic_corn_data.Rdata')
-load('inst/data/test_train_data.Rdata')
+##############################
+# Prepare the data 
+##############################
+
+# The Beck's Hybrids dataset should be named 'cleanedData.csv'.
+# We need to remove duplicates of data points for the correct function of our workflow 
+temp <- read.csv('inst/data/cleanedData.csv') %>% 
+  mutate(Date = as.Date(Date)) %>%
+  distinct(ID, Date,.keep_all = TRUE)
+
+# Remove any sites with late DOS values or with DOS values after harvest (dataset errors).
+temp <- temp %>% filter(dos < 182, dos < doh)
+
+# Remove any non-corn sites (corn is 'Family 1').
+temp = temp %>% filter(Family == 1)
+
+# Store a version of `temp` before data cleaning to use in later comparison. 
+before = temp
+IDs = unique(temp$ID)
+
+# Apply spline cleaning function here 
+if (!file.exists('inst/data/cleaned_corn_data.Rdata')){
+  temp <- clean_WLS(orig_df = temp)
+  
+  # Remove any sites with fewer than 5 data points.
+  finalIDs = c()
+  for (i in 1:length(IDs)) {
+    this <- temp %>% dplyr::filter(ID == IDs[i])
+    if (nrow(this) >= 5)
+      finalIDs = c(finalIDs, IDs[i])
+  }
+  temp <- temp %>% dplyr::filter(ID %in% finalIDs)
+  
+  save(temp, file = 'inst/data/cleaned_corn_data.Rdata')
+} else{
+  load('inst/data/cleaned_corn_data.Rdata')
+}
+
+# Generate 12 plots comparing uncleaned and cleaned data.
+samples = sample(IDs, 12)
+comp_plot <- compare_cleaned_plots(samples, before, temp)
+comp_plot
+
+cornIDs = unique(temp$ID)
+
+if (!file.exists('inst/data/test_train_data.Rdata')){
+  
+  # Randomly select training and test data.
+  trainIDs = sample(cornIDs, length(cornIDs) / 2, replace = FALSE)
+  train = temp %>% filter(ID %in% trainIDs)
+  test = temp %>% filter(!(ID %in% trainIDs))
+  
+  train = train %>% mutate(
+    #  das2 = das ^ 2,
+    Date = as.Date(Date),
+    DOY = as.integer(Date - as.Date('2016-12-31'))
+  )
+  
+  test = test %>% mutate(
+    #  das2 = das ^ 2,
+    Date = as.Date(Date),
+    DOY = as.integer(Date - as.Date('2016-12-31'))
+  )
+  
+  save(test, train, file = 'inst/data/test_train_data.Rdata')
+}else{
+  load('inst/data/test_train_data.Rdata')
+}
+
+
+##############################
+# Model fitting :: double logistic
+##############################
 
 trainIDs = unique(train$ID)
-
-################################################
-#### Fitting training dataset to double logistic
-################################################
 
 # Fit the double-logistic function to each site.
 dlog.data = data.frame(
@@ -62,9 +121,45 @@ for (i in 1:length(trainIDs)) {
   if (any(!is.na(res))) dlog.data = rbind(dlog.data, res)
 }
 
-# There are still some outliers here which might be associated with poor fitting data => let's remove them 
-ggplot(dlog.data) + geom_point(aes(x = eos, y = dos))
-dlog.data = dlog.data %>% filter(eos > 150, eos < 335)
+# Now we set ranges on our different parameters 
+# start of season: XX < sos < XX
+# end of season: XX < eos < XX
+# maximum NDVI: > 0.6
+# winter NDVI: < 0.3
+# day of max NDVI: XX < maxDOY < XX
+
+ids = sample(unique(dlog.data$ID), 12)
+before = before %>% filter(ID %in% ids)
+before$check = 'before'
+after = temp %>% filter(ID %in% ids)
+after$check = 'after'
+
+fitted = data.frame(ID = NULL, DOY = NULL, pred = NULL)
+for (i in 1:length(ids)){
+  pars = as.vector(dlog.data %>% filter(ID == ids[i]) %>% dplyr::select(mn, mx, sos, rsp, eos, rau))
+  fitted = rbind(fitted, 
+                 data.frame(ID = rep(ids[i], 365),
+                            DOY = 1:365,
+                            preds = predictDLOG(pars, 1:365)))
+}
+
+
+check = rbind(before,after) %>% mutate(Date = as.Date(Date),
+                                       DOY = as.numeric(Date - as.Date('2016-12-31')))
+
+ggplot(check) +
+  geom_point(aes(x = DOY, y = NDVI, color = check)) + 
+  geom_line(data = check %>% filter(check == 'after'), aes(x = DOY, y = NDVI,  linetype = 'cleaned'),color = 'red') +
+  geom_line(data = fitted, aes(x = DOY, y = preds, linetype = 'fitted'))+
+  scale_color_manual(values = c('before' = 'black', 'after' = 'red'))+
+  scale_linetype_manual(values = c('cleaned'='dashed', 'fitted'='solid')) +
+  facet_wrap(~ID, nrow = 4) 
+
+
+##############################
+# Employing the fitted model 
+##############################
+### THIS IS WHERE MY UPDATES ENDED (9/21)
 
 # Consider the relationship between variables and DOS to check for potential use in predicting planting date
 ggpairs(dlog.data %>% dplyr::select(mn,mx,sos,rsp,eos,rau,lat,lon,maxDOY,dos))
