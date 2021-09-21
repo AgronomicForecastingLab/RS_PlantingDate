@@ -57,7 +57,7 @@ clean_monotonic <- function(orig_df) {
     for (j in first:last) {
       
       # Check to see if we've already removed this point.
-      if (!(j %in% reduced$orig_row)) next
+      if (!(j %in% this$orig_row)) next
       
       # If this point is the max NDVI point, skip. 
       if (j == max_index) next
@@ -91,7 +91,7 @@ clean_monotonic <- function(orig_df) {
          geom_line(data = before, aes(x = Date, y = NDVI), col = 'red') 
        print(p)
        Sys.sleep(5)
-     }
+    }
     
     # Remove the rem_rows indices from the original dataset.
     orig_df = orig_df %>% filter(!orig_row %in% rem_rows)
