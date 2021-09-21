@@ -20,11 +20,8 @@ temp <- temp %>% filter(dos < 182, dos < doh)
 # Remove any non-corn sites (corn is 'Family 1').
 temp = temp %>% filter(Family == 1)
 
-# Let's check to see how the cleaning function works
-set.seed(102396)
-ids = sample(unique(temp$ID), 12, replace=F)
-before = temp %>% filter(ID %in% ids)
-before$check = 'before'
+# Store a version of `temp` before data cleaning to use in later comparison. 
+before = temp
 
 # Remove any data points that are not monotonically increasing/decreasing 
 IDs = unique(temp$ID)
@@ -41,21 +38,14 @@ if (!file.exists('inst/data/monotonic_corn_data.Rdata')){
   }
   temp <- temp %>% dplyr::filter(ID %in% finalIDs)
   
-  save(temp, file = 'inst/data/spline_corn_data.Rdata')
-}else{
+  save(temp, file = 'inst/data/monotonic_corn_data.Rdata')
+} else{
   load('inst/data/monotonic_corn_data.Rdata')
 }
 
-# Plot!
-after = temp %>% filter(ID %in% ids) %>% dplyr::select(-orig_row)
-after$check = 'after'
-check = rbind(before,after) %>% mutate(Date = as.Date(Date),
-                                       Sowing = as.Date(dos, origin = '2016-12-31'))
-ggplot(check)+
-  geom_line(aes(x = Date, y = NDVI, color = check), alpha = 0.5) + 
-  geom_point(aes(x = Date, y = NDVI, color = check)) +
-  geom_vline(aes(xintercept = Sowing))+ 
-  facet_wrap(~ID, nrow = 4)
+# Generate 12 plots comparing uncleaned and cleaned data.
+comp_plot <- compare_cleaned_plots(IDs, 12, before, temp)
+comp_plot
 
 cornIDs = unique(temp$ID)
 
