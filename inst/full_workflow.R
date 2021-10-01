@@ -9,14 +9,15 @@ require(RSPlantingDate)
 
 rm(list=ls())
 set.seed(102396)
+setwd('/Volumes/UIUC/libs/RS_PlantingDate')
 
 ##############################
-# Prepare the data 
+# I. Prepare the data 
 ##############################
 
 # The Beck's Hybrids dataset should be named 'cleanedData.csv'.
-# We need to remove duplicates of data points for the correct function of our workflow 
-temp <- read.csv('inst/data/cleanedData.csv') %>% 
+# We need to remove duplicates of data points for the correct function of our workflow. I'm not sure where these doubles came from 
+temp <- read.csv('inst/data/organized/cleanedData.csv') %>% 
   mutate(Date = as.Date(Date)) %>%
   distinct(ID, Date,.keep_all = TRUE)
 
@@ -26,67 +27,100 @@ temp <- temp %>% filter(dos < 182, dos < doh)
 # Remove any non-corn sites (corn is 'Family 1').
 temp = temp %>% filter(Family == 1)
 
+# Some of the plots have bad locations provided; I manually found them and here we remove them 
+bads = read.table('inst/data/unclearPlots.txt') %>%
+  mutate(ID = as.numeric(V1))
+temp = temp %>% filter(!(ID %in% bads))
+
 # Store a version of `temp` before data cleaning to use in later comparison. 
 before = temp
 IDs = unique(temp$ID)
+before = before %>% mutate(
+  Date = as.Date(Date),
+  DOY = as.integer(Date - as.Date('2016-12-31'))
+)
 
-# Apply spline cleaning function here 
-if (!file.exists('inst/data/cleaned_corn_data.Rdata')){
-  temp <- clean_WLS(orig_df = temp)
-  
-  # Remove any sites with fewer than 5 data points.
-  finalIDs = c()
-  for (i in 1:length(IDs)) {
-    this <- temp %>% dplyr::filter(ID == IDs[i])
-    if (nrow(this) >= 5)
-      finalIDs = c(finalIDs, IDs[i])
-  }
-  temp <- temp %>% dplyr::filter(ID %in% finalIDs)
-  
-  save(temp, file = 'inst/data/cleaned_corn_data.Rdata')
-} else{
-  load('inst/data/cleaned_corn_data.Rdata')
+# 1: First let's remove outliers (MEAN +/- 3*SD)
+quants = data.frame(DOY = NULL, mn = NULL, upper = NULL, lower = NULL)
+incs = seq(1, 365, 10)
+# determine the bounds 
+for (i in 2:length(incs)){
+  vals = before %>% filter(DOY < incs[i], DOY >= incs[i-1]) 
+  std = sd(vals$NDVI)
+  mn = mean(vals$NDVI)
+  quants = rbind(quants, 
+                 data.frame(mn = mn, 
+                            DOY = mean(incs[(i-1):i]),
+                            upper = mn + (3*std),
+                            lower = mn - (3*std)))
 }
 
-# Generate 12 plots comparing uncleaned and cleaned data.
-samples = sample(IDs, 12)
-comp_plot <- compare_cleaned_plots(samples, before, temp)
-comp_plot
+# Figure: Demonstrate the bounds of the data where we need to perform removals 
+ggplot(before) + 
+  geom_point(aes( x= DOY, y = NDVI), alpha = 0.15) +
+  geom_ribbon(data = quants, aes( x = DOY, ymin = lower, ymax = upper, y = mn),color = 'red', linetype = 'dashed', fill = 'red',alpha = 0.05) +
+  geom_line(data = quants, aes( x= DOY, y = mn), color = 'red', size = 2)
 
+# now remove points outside of the bounds 
+mid = before[1,]
+for (i in 2:length(incs)){
+  vals = before %>% filter(DOY < incs[i], 
+                           DOY >= incs[i-1], 
+                           NDVI <= quants$upper[i],
+                           NDVI >= quants$lower[i])
+  mid = rbind(mid, 
+              vals)
+}
+mid = mid[-1,] %>% select(-DOY)
+
+# 2: Remove any values before April with NDVI values greater than ???
+bad <- mid %>% filter(Date < as.Date('2017-05-01'), NDVI > 0.375)
+mid <- mid %>% filter(!(X %in% bad$X))
+
+# 3: Apply spline cleaning function here 
+temp <- clean_spline(orig_df = mid)
+
+# 4: Remove any sites with fewer than 7 data points.
+finalIDs = c()
+for (i in 1:length(IDs)) {
+  this <- temp %>% dplyr::filter(ID == IDs[i])
+  if (nrow(this) >= 7)
+    finalIDs = c(finalIDs, IDs[i])
+}
+temp <- temp %>% dplyr::filter(ID %in% finalIDs)
+#save(temp, file = 'inst/data/cleaned_corn_data.Rdata')
+
+# Figure: Generate 16 plots comparing uncleaned and cleaned data.
 cornIDs = unique(temp$ID)
+samples = sample(cornIDs, 16)
+compare_cleaned_plots(samples, before %>% dplyr::select(-DOY), temp)
+rm(quants, this, vals, finalIDs, IDs, incs, mn, samples, std, i)
 
-if (!file.exists('inst/data/test_train_data.Rdata')){
-  
-  # Randomly select training and test data.
-  trainIDs = sample(cornIDs, length(cornIDs) / 2, replace = FALSE)
-  train = temp %>% filter(ID %in% trainIDs)
-  test = temp %>% filter(!(ID %in% trainIDs))
-  
-  train = train %>% mutate(
-    #  das2 = das ^ 2,
-    Date = as.Date(Date),
-    DOY = as.integer(Date - as.Date('2016-12-31'))
-  )
-  
-  test = test %>% mutate(
-    #  das2 = das ^ 2,
-    Date = as.Date(Date),
-    DOY = as.integer(Date - as.Date('2016-12-31'))
-  )
-  
-  save(test, train, file = 'inst/data/test_train_data.Rdata')
-}else{
-  load('inst/data/test_train_data.Rdata')
-}
+# 5: Now, we need to extract the needed met information for each location. 
+## THIS PART STILL NEEDS TO BE DONE. 
 
+# 6: Now, let's separate the data into separate groups: test and train. 
+# We can use the train dataset to explore and fit the data. 
+# We can use the test dataset to see how the final model works. 
+# Randomly select training and test data.
+# Setting a seed in the script is important here so we can always get the same datasets 
+# if we have to rerun this script. 
+
+trainIDs = sample(cornIDs, length(cornIDs) / 2, replace = FALSE)
+temp = temp %>% mutate(
+  Date = as.Date(Date),
+  DOY = as.integer(Date - as.Date('2016-12-31'))
+)
+train = temp %>% filter(ID %in% trainIDs)
+test = temp %>% filter(!(ID %in% trainIDs))
+
+#save(test, train, file = 'inst/data/test_train_data.Rdata')
 
 ##############################
-# Model fitting :: double logistic
+# II. Estimate emergence for each plot 
 ##############################
 
-trainIDs = unique(train$ID)
-
-# Fit the double-logistic function to each site.
+# 1: Fit the double-logistic function to each site
 dlog.data = data.frame(
   ID = NULL,
   mn = NULL,
@@ -111,7 +145,8 @@ dlog.data = data.frame(
   # day of year where NDVI is at maximum following model
 ) 
 
-# Iterate through all training plots, fit a double logistic, and record the fitted parameters in dlog.data.
+# Iterate through all training plots, fit a double logistic, 
+# and record the fitted parameters in dlog.data.
 pb = txtProgressBar(0, 1, style=3)
 for (i in 1:length(trainIDs)) {
   setTxtProgressBar(pb, i/length(trainIDs))
@@ -121,19 +156,27 @@ for (i in 1:length(trainIDs)) {
   if (any(!is.na(res))) dlog.data = rbind(dlog.data, res)
 }
 
-# Now we set ranges on our different parameters 
-# start of season: XX < sos < XX
-# end of season: XX < eos < XX
-# maximum NDVI: > 0.6
-# winter NDVI: < 0.3
-# day of max NDVI: XX < maxDOY < XX
+#ggpairs(dlog.data %>% dplyr::select(mn,mx,sos,eos,rau,rsp,lat,lon,dos))
 
-ids = sample(unique(dlog.data$ID), 12)
-before = before %>% filter(ID %in% ids)
-before$check = 'before'
-after = temp %>% filter(ID %in% ids)
-after$check = 'after'
+# 2: Limit our fits to the ones that are actually reasonable by setting limits on some of the parameters 
+bounds = list(
+  sos = list(lower = 100,
+             upper = 200),
+  eos = list(lower = 244,
+             upper = 344),
+  mn = list(lower = 0,
+             upper = 0.375),
+  mx = list(lower = 0.5,
+             upper = 0.9)
+)
 
+dlog.data = dlog.data %>% filter(sos > bounds$sos$lower, sos < bounds$sos$upper,
+                                 eos > bounds$eos$lower, eos < bounds$eos$upper, 
+                                 mn > bounds$mn$lower, mn < bounds$mn$upper,
+                                 mx > bounds$mx$lower, mx < bounds$mx$upper)
+
+# Figure: This figure demonstrates a sample of fitted double logistic functions. 
+ids = sample(unique(dlog.data$ID), 16)
 fitted = data.frame(ID = NULL, DOY = NULL, pred = NULL)
 for (i in 1:length(ids)){
   pars = as.vector(dlog.data %>% filter(ID == ids[i]) %>% dplyr::select(mn, mx, sos, rsp, eos, rau))
@@ -142,208 +185,31 @@ for (i in 1:length(ids)){
                             DOY = 1:365,
                             preds = predictDLOG(pars, 1:365)))
 }
+check = temp %>% mutate(Date = as.Date(Date), DOY = as.numeric(Date - as.Date('2016-12-31'))) %>%
+  filter(ID %in% ids)
 
-
-check = rbind(before,after) %>% mutate(Date = as.Date(Date),
-                                       DOY = as.numeric(Date - as.Date('2016-12-31')))
-
+# Dashed line shows fitted double logistic function for each plot 
 ggplot(check) +
-  geom_point(aes(x = DOY, y = NDVI, color = check)) + 
-  geom_line(data = check %>% filter(check == 'after'), aes(x = DOY, y = NDVI,  linetype = 'cleaned'),color = 'red') +
-  geom_line(data = fitted, aes(x = DOY, y = preds, linetype = 'fitted'))+
-  scale_color_manual(values = c('before' = 'black', 'after' = 'red'))+
+  geom_point(aes(x = DOY, y = NDVI)) + 
+  geom_line(data = fitted, aes(x = DOY, y = preds), linetype = 'dashed')+
   scale_linetype_manual(values = c('cleaned'='dashed', 'fitted'='solid')) +
-  facet_wrap(~ID, nrow = 4) 
+  facet_wrap(~ID, nrow = 4) +
+  labs(color = 'Data Cleaning',
+       linetype = NULL)
 
+# 3: Estimate emergence for each plot based on fitted double logistic curve 
+## WE NEED TO FIGURE THIS PART OUT 
+# I think we should have one function that estimates emergence based on a fitted double logistic function. 
+# The script would just need the fitted parameters and would return a DOY for emergence. 
 
 ##############################
-# Employing the fitted model 
+# III. Use climate data to estimate planting date from emergence  
 ##############################
-### THIS IS WHERE MY UPDATES ENDED (9/21)
 
-# Consider the relationship between variables and DOS to check for potential use in predicting planting date
-ggpairs(dlog.data %>% dplyr::select(mn,mx,sos,rsp,eos,rau,lat,lon,maxDOY,dos))
-ggpairs(dlog.data %>% dplyr::select(dos, sos, eos, lat, maxDOY))
-
-int <- lm(dos ~ 1, data=dlog.data)
-all <- lm(dos ~ eos*lat*maxDOY*lon*sos, data=dlog.data)
-
-# Perform forward stepwise regression
-dlogMod <- step(int, direction='forward', scope=formula(all), trace=0)
+## We need to determine a method to do this part, too. 
 
 ################################################
-#### Fitting training dataset to Gaussian function
-################################################
-
-# fit bell curve to each site 
-norm.data = data.frame(ID = NULL,
-                       mu = NULL,
-                       sigma = NULL,
-                       k = NULL,
-                       dos = NULL,
-                       lat = NULL, 
-                       lon = NULL)
-
-# Iterate through all training plots, fit a normal, and record the fitted parameters in norm.data
-pb = txtProgressBar(0, 1, style=3)
-for (i in 1:length(trainIDs)) {
-  setTxtProgressBar(pb, i/length(trainIDs))
-  this = train %>% filter(ID == trainIDs[i]) %>% 
-    distinct(DOY, .keep_all = TRUE)
-  if (nrow(this) == 0) next
-  res = fit_normal(x = this$NDVI, t = this$DOY)
-  if (any(!is.na(res))) norm.data = rbind(norm.data, res)
-}
-
-# There are still some outliers here which might be associated with poor fitting data => let's remove them 
-ggplot(norm.data) + geom_point(aes(x = mu, y = dos))
-ggplot(norm.data) + geom_point(aes(x = sigma, y = dos))
-norm.data = norm.data %>% filter(mu > 100, mu < 300, sigma < 200)
-
-# Consider the relationship between variables and DOS to check for potential use in predicting planting date
-ggpairs(norm.data %>% dplyr::select(mu,sigma,k,dos))
-
-int <- lm(dos ~ 1, data=norm.data)
-all <- lm(dos ~ lat*mu*sigma*k*lon, data=norm.data)
-
-# Perform forward stepwise regression
-normMod <- step(int, direction='forward', scope=formula(all), trace=0)
-
-################################################
-#### Let's check out the model residuals to figure out what's going on 
-################################################
-
-plotDat = data.frame(norm = normMod$residuals, 
-                     ID = norm.data$ID,
-                     dos = norm.data$dos) %>%
-  left_join(data.frame(dlog = dlogMod$residuals, 
-                       ID = dlog.data$ID),
-            by = 'ID') %>%
-  reshape2::melt(id = c('ID','dos')) %>%
-  left_join(temp %>% dplyr::select(ID, Latitude, Longitude) %>% distinct(.keep_all=TRUE),
-            by = 'ID')
-
-# residuals vs. dos
-ggplot(plotDat) + 
-  geom_point(aes(x = dos, y = value, color = variable), alpha = 0.75) + 
-  geom_smooth(method = 'lm', aes(x=dos, y=value, group=variable), color = 'black',se = F) +
-  labs(title = 'Model Residuals vs. Observed Planting Date',
-       x = 'Observed Planting Date',
-       y = 'Residuals (Observed-Predicted)',
-       color = 'Model') +
-  theme_bw() +
-  theme(legend.position = 'top', text = element_text(size = 20, family = 'serif'),
-        plot.title = element_text(hjust = 0.5),
-        axis.title.y = element_text(angle = 90, family = 'serif', size = 20),
-        axis.title.x = element_text(angle = 0, family = 'serif', size = 20),
-        strip.text.y = element_text(family = 'serif', size = 20),
-        panel.grid.minor = element_line(color = 'gray84'), 
-        panel.grid.major = element_line(color = 'gray84')) 
-
-# residuals in space
-# first classify them into size classes
-categorize = function(res){
-  if (is.na(res)) return(NA)
-  if(res < -20) cat = '< -20'
-  if(res >= -20 & res < 0) cat = '-20-0'
-  if(res >= 0 & res < 20) cat = '0-20'
-  if(res >= 20 & res < 40) cat = '20-40'
-  if(res >= 40) cat = '> 40'
-  return(cat)
-}
-plotDat$cat = sapply(plotDat$value,categorize)
-plotDat$cat = factor(plotDat$cat, levels = c('< -20','-20-0','0-20','20-40','> 40'))
-
-# looking at how residual direction/magnitude changes spatially 
-ggplot(plotDat %>% filter(!is.na(value))) + 
-  geom_point(aes(x = Longitude, y = Latitude, color = cat, size = value), alpha = 0.75) + 
-  labs(title = 'Spatial Pattern in Residuals',
-       x = 'Latitude',
-       y = 'Longitude',
-       color = 'Residual Size Class') +
-  facet_wrap(~variable) + 
-  theme_bw() +
-  guides(size = "none") + 
-  theme(legend.position = 'right', text = element_text(size = 20, family = 'serif'),
-        plot.title = element_text(hjust = 0.5),
-        axis.title.y = element_text(angle = 90, family = 'serif', size = 20),
-        axis.title.x = element_text(angle = 0, family = 'serif', size = 20),
-        strip.text.y = element_text(family = 'serif', size = 20),
-        panel.grid.minor = element_line(color = 'gray84'), 
-        panel.grid.major = element_line(color = 'gray84')) +
-  scale_color_manual(values = c('< -20'='blue', '-20-0'='deepskyblue', '0-20'='lightblue',
-                                '20-40'='lightgoldenrod2','> 40'='goldenrod4'))
-
-categorize2 = function(dos){
-  if (is.na(dos)) return(NA)
-  if(dos < 90) cat = 1
-  if(dos >= 90 & dos < 110) cat = 2
-  if(dos >= 110 & dos < 130) cat = 3
-  if(dos >= 130 & dos < 150) cat = 4
-  if(dos >= 150) cat = 5
-  return(cat)
-}
-plotDat$cat2 = sapply(plotDat$dos,categorize2)
-plotDat$cat2 = factor(plotDat$cat2, levels = c(1:5))
-
-# considering how planting date might be related to regions
-ggplot(plotDat %>% filter(!is.na(value))) + 
-  geom_point(aes(x = Longitude, y = Latitude, color = as.factor(cat2)), alpha = 0.75) + 
-  labs(title = 'Regional Pattern in Day of Sowing',
-       x = 'Latitude',
-       y = 'Longitude',
-       color = 'Day of Sowing') +
-  facet_wrap(~variable) + 
-  theme_bw() +
-  theme(legend.position = 'right', text = element_text(size = 20, family = 'serif'),
-        plot.title = element_text(hjust = 0.5),
-        axis.title.y = element_text(angle = 90, family = 'serif', size = 20),
-        axis.title.x = element_text(angle = 0, family = 'serif', size = 20),
-        strip.text.y = element_text(family = 'serif', size = 20),
-        panel.grid.minor = element_line(color = 'gray84'), 
-        panel.grid.major = element_line(color = 'gray84')) 
-
-ggplot(plotDat %>% filter(!is.na(value))) + 
-  geom_bar(aes(x = cat2, fill = as.factor(cat)), alpha = 0.75) + 
-  labs(title = 'Residual Category vs. Day of Sowing Category',
-       x = 'Day of Sowing Grouping',
-       y = 'Count',
-       fill = 'Residual Category') +
-  facet_wrap(~variable) + 
-  theme_bw() +
-  theme(legend.position = 'right', text = element_text(size = 20, family = 'serif'),
-        plot.title = element_text(hjust = 0.5),
-        axis.title.y = element_text(angle = 90, family = 'serif', size = 20),
-        axis.title.x = element_text(angle = 0, family = 'serif', size = 20),
-        strip.text.y = element_text(family = 'serif', size = 20),
-        panel.grid.minor = element_line(color = 'gray84'), 
-        panel.grid.major = element_line(color = 'gray84')) 
-
-# consider how other model parameters might relate to residuals => no relationship here really 
-ggplot(plotDat %>% filter(!is.na(value)) %>% 
-         dplyr::select(-value, -variable) %>%
-         distinct(ID, .keep_all = TRUE) %>%
-         left_join(dlog.data %>% dplyr::select(ID, mn, mx, sos, rsp, eos, rau, maxDOY), by = c('ID')) %>%
-         left_join(norm.data %>% dplyr::select(ID, mu, sigma, k), by = c('ID')) %>%
-         reshape2::melt(id = c('ID','dos','Latitude','Longitude','cat','cat2'))) + 
-  geom_histogram(aes(x = value, fill = cat), alpha = 0.75) + 
-  labs(title = 'Model Parameters and Residual Size',
-       x = 'Parameter Value',
-       y = 'Count',
-       fill = 'Residual Group') +
-  facet_wrap(~variable, scales = 'free') + 
-  theme_bw() +
-  theme(legend.position = 'right', text = element_text(size = 20, family = 'serif'),
-        plot.title = element_text(hjust = 0.5),
-        axis.title.y = element_text(angle = 90, family = 'serif', size = 20),
-        axis.title.x = element_text(angle = 0, family = 'serif', size = 20),
-        strip.text.y = element_text(family = 'serif', size = 20),
-        panel.grid.minor = element_line(color = 'gray84'), 
-        panel.grid.major = element_line(color = 'gray84')) 
-
-
-################################################
-#### Testing the two new functions at each data point 
+# IV. Apply the final model to the test dataset to evaluate performance 
 ################################################
 
 # Organize test data
@@ -352,44 +218,92 @@ testIDs = unique(test$ID)
 # Predictions
 pred.data = data.frame(ID = NULL,
                        obs = NULL,
-                       dlog = NULL,
-                       norm = NULL)
+                       emerg = NULL, 
+                       pred = NULL)
 
 pb = txtProgressBar(0, 1, style=3)
 for (i in 1:length(testIDs)){
   setTxtProgressBar(pb, i/length(testIDs))
+  
+  # get the data for this plot 
   this = test %>% filter(ID == testIDs[i]) %>% distinct(DOY, .keep_all = TRUE)
   if (nrow(this) == 0) next
   
-  # first dlog
+  # first, fit the double logistic function
   res = fit_double_logistic(x = this$NDVI, t= this$DOY)
-  if (any(!is.na(res))){
-    pred1 = predict.lm(dlogMod, res)
-  }
+  if (any(is.na(res))) next 
   
-  # then norm
-  res = fit_normal(x = this$NDVI, t = this$DOY)
-  if (any(!is.na(res))){
-    pred2 = predict.lm(normMod, res)
-  }
-
+  # check if the fit is bad 
+  res = res %>% filter(sos > bounds$sos$lower, sos < bounds$sos$upper,
+                       eos > bounds$eos$lower, eos < bounds$eos$upper, 
+                       mn > bounds$mn$lower, mn < bounds$mn$upper,
+                       mx > bounds$mx$lower, mx < bounds$mx$upper)
+  if (nrow(res) == 0) next
+  
+  # second, estimate emergence
+  
+  
+  # third, estimate planting date 
+  
+  
+  # save the predictions (need to add those predicted values to the save function)
   pred.data = rbind(pred.data,
                     data.frame(ID = testIDs[i],
                                obs = this$dos[1],
-                               dlog = pred1,
-                               norm = pred2))
-  
+                               emerg = NA, 
+                               pred = NA))
 }
 
-pred.data = pred.data %>% filter(norm > 90, norm < 182)
+# Figure: observed vs. predicted planting date 
+ggplot(pred.data) + geom_point(aes(x = obs, y = pred)) + 
+  geom_abline(slope = 1, linetype = 'dashed') 
 
+# Calculate RMSE of prediction 
 pred.data %>% 
   mutate(sqerror1 = (norm-obs)^2,
          sqerror2 = (dlog-obs)^2) %>%
   dplyr::summarize(norm_RMSE = sqrt(mean(sqerror1)),
                    dlog_RMSE = sqrt(mean(sqerror2)))
-ggplot(pred.data) + 
-  geom_point(aes(x = obs, y = dlog), color = 'blue')+
-  geom_point(aes(x = obs, y = norm), color = 'red')+
-  geom_abline(slope = 1, intercept = 0)
+
+################################################
+# 4. This is just some old code in case we end up needing some of this stuff later on 
+################################################
+
+# # This is a code I used to perform forward stepwise regression to determine the best linear model 
+# # We might not need to use this for this section, but I'm keeping it here just in case. 
+# int <- lm(dos ~ 1, data=dlog.data)
+# all <- lm(dos ~ sos*eos*maxDOY*lat*lon, data=dlog.data)
+# 
+# # Perform forward stepwise regression
+# dlogMod <- step(int, direction='forward', scope=formula(all), trace=0)
+# summary(dlogMod)
+# 
+# # Code to group planting dates into 5 categories for easier visualizations
+# categorize2 = function(dos){
+#   if (is.na(dos)) return(NA)
+#   if(dos < 90) cat = 1
+#   if(dos >= 90 & dos < 110) cat = 2
+#   if(dos >= 110 & dos < 130) cat = 3
+#   if(dos >= 130 & dos < 150) cat = 4
+#   if(dos >= 150) cat = 5
+#   return(cat)
+# }
+# plotDat$cat2 = sapply(plotDat$dos,categorize2)
+# plotDat$cat2 = factor(plotDat$cat2, levels = c(1:5))
+# 
+# # Code to group residuals into 5 categories for easier visualizations
+# categorize = function(res){
+#   if (is.na(res)) return(NA)
+#   if(res < -20) cat = '< -20'
+#   if(res >= -20 & res < 0) cat = '-20-0'
+#   if(res >= 0 & res < 20) cat = '0-20'
+#   if(res >= 20 & res < 40) cat = '20-40'
+#   if(res >= 40) cat = '> 40'
+#   return(cat)
+# }
+# plotDat$cat = sapply(plotDat$value,categorize)
+# plotDat$cat = factor(plotDat$cat, levels = c('< -20','-20-0','0-20','20-40','> 40'))
+
+
+
 

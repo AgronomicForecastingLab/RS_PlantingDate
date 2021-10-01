@@ -1,0 +1,27 @@
+
+1. Collect and prepare data 
+  - Obtain all Beck's observations for 2017-2019 with corn [SCRIPT TO OBTAIN THOSE PLOTS]
+  - Ensure the locations of those plots are OK [THIS STEP IS TEDIOUS AND COULD BE DONE BY SOMEONE ELSE; I HAVE A SCRIPT TO DO THIS SEMI-AUTOMATICALLY]
+  - Extract the needed met for each location from Jan-July [NEED SCRIPT TO DO THIS] 
+    -- Daily total precipitation 
+    -- Daily growing degree days (GDD) 
+  - Have Hamze extract the NDVI for our locations and years 
+    -- Pre-process the NDVI data [ONE WORKFLOW TO CLEAN THIS DATA => then once it's cleaned, we shouldn't have to touch it again]
+        - Remove overly high NDVI at beginning of the year 
+        - Use smoothed 95% interval to help remove large deviations
+        - Spline smoothing 
+        - Remove plots where we have less than 7 data points
+    
+2. Estimate emergence
+  - Fit the double logistic function at each plot to fill in gaps
+  - Use value ranges to identify bad fits and remove them from the analysis
+  - What methods can we use to estimate emergence for each plot based on this fitted model?
+  
+3. Trace back from emergence to get planting date based on climate variables 
+  - Use methods in the literature/models/linear model to estimate the time between emergence and planting date based on climate variables + latitude
+
+
+
+To consider in the code: 
+- Step 1, Part 2 => we need to identify an NDVI threshold here. Also did Teerath say also April or just up until April?
+- For the value ranges, I think we need to be careful about being overlimiting. For example, I think that the rau and rsp values should not be limited - I think the higher values are a symptom of the lack of a data for our fitting. For example, use the hist(dlog.data$rsp) command to see how most of the actual fitted values actually fall outside of the ranges seen in other papers. For the other ones, I think having a reasonable limit is going to be good. 
