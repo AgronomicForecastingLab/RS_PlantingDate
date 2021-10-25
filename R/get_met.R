@@ -1,58 +1,54 @@
-require(tidyverse)
-
-#' Given a plot location (lat/lon) and year, calculates monthly precipitation
-#' and cumulative GDD (Growing Degree Days).
-#' 
-#' Retrieves precipitation, temperature data from the meterological database
-#' 'ERA5 hourly data on single levels from 1979 to present'. 
+#' Retrieves hourly total precipitation, maximum temperature, minimum 
+#' temperature, soil temperature, and soil moisture data from the CDS reanalysis
+#' data product 'ERA5 hourly data on single levels from 1979 to present'. 
 #'
-#' @param lat plot latitude
-#' @param lon plot longitude
-#' @param year year that we need data for
+#' @param lat Site latitude coordinate.
+#' @param lon Site longitude coordinate.
+#' @param date blaaah
 #' @return A data frame containing cumulative GDD and precipitation for each month of the year
 #' @export
-get_met <- function(lat, lon, year) {
-  load('inst/data/test_train_data.Rdata')
-  all = rbind(test, train)
-  tile <- c()
-  
-  # Determine tile location of the given lat/lon.
-  # Load directory of available pSIMS tiles.
-  pSIMS_extents <- read.csv2("inst/pSIMS_extents.csv", sep = ',')
-  
-  # Verify that given lat/lon falls within a pSIMS tile.
-  for (i in 1:nrow(all)) {
-    print(i)
-    lat = all$Latitude[i]
-    lon = all$Longitude[i]
-    
-    current_tile <- pSIMS_extents %>%
-      dplyr::filter(xmax >= lon,
-                    xmin <= lon,
-                    ymin <= lat,
-                    ymax >= lat)
-    if (nrow(current_tile) < 1)
-      stop("The lat/lon does not fall into any pSIMS tile")
-    tile = c(tile, current_tile$name)
-  }
-  unique(tile)
-  
-  # Extract tile lat and long pSIMS indices.
-  idxs <- (current_tile %>%
-             pull(name) %>%
-             strsplit('/'))[[1]] %>% as.numeric()
-  
-  tlatidx <- idxs[1]
-  tlonidx <- idxs[2]
-  
-  # Tile deltas ____ (?)
-  tlatdelta <- 120
-  tlondelta <- 120
-  
-  # what tile we want to simulate
-  
-  ## Store lat/lon degrees associated with given tile.
-  lats <- seq.int(current_tile$ymin, current_tile$ymax, by=1)
-  lons <- seq.int(current_tile$xmin, current_tile$xmax, by=1)
- 
+get_met <- function(lat, lon, date) {
+  request <- list(
+    product_type = "reanalysis",
+    format = "netcdf",
+    variable = c(
+      "maximum_2m_temperature_since_previous_post_processing",
+      "minimum_2m_temperature_since_previous_post_processing",
+      "soil_temperature_level_1",
+      "total_precipitation",
+      "volumetric_soil_water_layer_1"
+    ),
+    year = "2017",
+    month = "07",
+    day = "10",
+    time = c(
+      "00:00",
+      "01:00",
+      "02:00",
+      "03:00",
+      "04:00",
+      "05:00",
+      "06:00",
+      "07:00",
+      "08:00",
+      "09:00",
+      "10:00",
+      "11:00",
+      "12:00",
+      "13:00",
+      "14:00",
+      "15:00",
+      "16:00",
+      "17:00",
+      "18:00",
+      "19:00",
+      "20:00",
+      "21:00",
+      "22:00",
+      "23:00"
+    ),
+    dataset_short_name = "reanalysis-era5-single-levels",
+    target = "download.nc"
+  )
+  return(request)
 }

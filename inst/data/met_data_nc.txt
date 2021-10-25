@@ -1,0 +1,55 @@
+File inst/data/met_data.nc (NC_FORMAT_64BIT):
+
+     5 variables (excluding dimension variables):
+        short mx2t[longitude,latitude,time]   
+            scale_factor: 0.00102460255032829
+            add_offset: 278.483488858393
+            _FillValue: -32767
+            missing_value: -32767
+            units: K
+            long_name: Maximum temperature at 2 metres since previous post-processing
+        short mn2t[longitude,latitude,time]   
+            scale_factor: 0.00102439136326712
+            add_offset: 278.338309215451
+            _FillValue: -32767
+            missing_value: -32767
+            units: K
+            long_name: Minimum temperature at 2 metres since previous post-processing
+        short stl1[longitude,latitude,time]   
+            scale_factor: 0.0008687616338691
+            add_offset: 283.514732855511
+            _FillValue: -32767
+            missing_value: -32767
+            units: K
+            long_name: Soil temperature level 1
+            standard_name: surface_temperature
+        short tp[longitude,latitude,time]   
+            scale_factor: 4.20795167259929e-07
+            add_offset: 0.0137877744504388
+            _FillValue: -32767
+            missing_value: -32767
+            units: m
+            long_name: Total precipitation
+        short swvl1[longitude,latitude,time]   
+            scale_factor: 9.63751086538148e-06
+            add_offset: 0.315767541434407
+            _FillValue: -32767
+            missing_value: -32767
+            units: m**3 m**-3
+            long_name: Volumetric soil water layer 1
+
+     3 dimensions:
+        longitude  Size:69
+            units: degrees_east
+            long_name: longitude
+        latitude  Size:39
+            units: degrees_north
+            long_name: latitude
+        time  Size:8784
+            units: hours since 1900-01-01 00:00:00.0
+            long_name: time
+            calendar: gregorian
+
+    2 global attributes:
+        Conventions: CF-1.6
+        history: 2021-10-12 00:52:58 GMT by grib_to_netcdf-2.20.0: /opt/ecmwf/mars-client/bin/grib_to_netcdf -S param -o /cache/data9/adaptor.mars.internal-1633999682.3860216-32050-11-7c9f114e-d513-4100-9f19-2260788461dc.nc /cache/tmp/7c9f114e-d513-4100-9f19-2260788461dc-adaptor.mars.internal-1633996398.585558-32050-14-tmp.grib

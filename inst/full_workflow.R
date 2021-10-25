@@ -4,7 +4,9 @@ require(phenopix)
 require(zoo)
 require(greenbrown)
 require(RSPlantingDate)
+require(devtools)
 
+install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies=TRUE)
 # Data cleaning and fitting workflow with the double logistic function
 
 rm(list=ls())
@@ -207,6 +209,17 @@ ggplot(check) +
 ##############################
 
 ## We need to determine a method to do this part, too. 
+
+# Replace `user`, `key` values with CDS account username, API key. 
+user <- "10027"
+key <- "e5d0082f-ae4d-44d6-a1e0-3b581282033f"
+wf_set_key(user = user, key = key, 'cds')
+
+met_ncfile <- wf_request(user = "67047",
+                            request = request,   
+                            transfer = TRUE,  
+                            path = "~",
+                            verbose = FALSE)
 
 ################################################
 # IV. Apply the final model to the test dataset to evaluate performance 
