@@ -2,22 +2,24 @@
 % Please edit documentation in R/get_met.R
 \name{get_met}
 \alias{get_met}
-\title{Given a plot location (lat/lon) and year, calculates monthly precipitation
-and cumulative GDD (Growing Degree Days).}
+\title{Retrieves hourly total precipitation, maximum temperature, minimum 
+temperature, soil temperature, and soil moisture data from the CDS reanalysis
+data product 'ERA5 hourly data on single levels from 1979 to present'.}
 \usage{
-get_met(lat, lon, year)
+get_met(lat, lon, date)
 }
 \arguments{
-\item{lat}{plot latitude}
+\item{lat}{Site latitude coordinate.}
 
-\item{lon}{plot longitude}
+\item{lon}{Site longitude coordinate.}
 
-\item{year}{year that we need data for}
+\item{date}{blaaah}
 }
 \value{
 A data frame containing cumulative GDD and precipitation for each month of the year
 }
 \description{
-Retrieves precipitation, temperature data from the meterological database
-'ERA5 hourly data on single levels from 1979 to present'.
+Retrieves hourly total precipitation, maximum temperature, minimum 
+temperature, soil temperature, and soil moisture data from the CDS reanalysis
+data product 'ERA5 hourly data on single levels from 1979 to present'.
 }

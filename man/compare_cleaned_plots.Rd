@@ -4,16 +4,16 @@
 \alias{compare_cleaned_plots}
 \title{Returns a ggplot comparing uncleaned data plots to cleaned data plots.}
 \usage{
-compare_cleaned_plots(IDs, n, before, after)
+compare_cleaned_plots(ids, before, after)
 }
 \arguments{
-\item{IDs}{IDs of data within the data frame to compare.}
-
-\item{n}{Size of random sample of data to include in comparison.}
-
 \item{before}{The data frame before data cleaning.}
 
 \item{after}{The data frame after data cleaning.}
+
+\item{IDs}{IDs of data within the data frame to compare.}
+
+\item{n}{Size of random sample of data to include in comparison.}
 }
 \value{
 A ggplot comparing uncleaned and cleaned data plots.

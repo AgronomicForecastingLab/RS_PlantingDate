@@ -10,8 +10,8 @@
 #' @param doys A list of days since planting at each observed date.
 #' @param fA Function for 1st Venancio equation.
 #' @param fB Function for 2nd Venancio equation.
-#' @start_d The earliest DOS value for the observed region.
-#' @end_d The latest DOS value for the observed region.
+#' @param start_d The earliest DOS value for the observed region.
+#' @param end_d The latest DOS value for the observed region.
 #' @return A matrix of DOS predictions. 
 #' @export
 predict_DOS  <- function(dat, doys, fA, fB, start_d, end_d) {

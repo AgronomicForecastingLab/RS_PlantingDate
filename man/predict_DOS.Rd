@@ -14,6 +14,10 @@ predict_DOS(dat, doys, fA, fB, start_d, end_d)
 \item{fA}{Function for 1st Venancio equation.}
 
 \item{fB}{Function for 2nd Venancio equation.}
+
+\item{start_d}{The earliest DOS value for the observed region.}
+
+\item{end_d}{The latest DOS value for the observed region.}
 }
 \value{
 A matrix of DOS predictions.

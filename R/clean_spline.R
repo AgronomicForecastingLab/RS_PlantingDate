@@ -1,3 +1,5 @@
+require(splines)
+
 #' Smooths NDVI time series using splines 
 #'
 #' @param orig_df A data frame created from the Beck's dataset.
@@ -5,9 +7,7 @@
 #' @return A data frame of Beck's data w/o divergent data points.
 #' @export
 clean_spline <- function(orig_df) {
-  
-  require(splines)
-  
+
   # Add original row numbers as a column
   orig_df = orig_df %>% 
     rownames_to_column('orig_row') %>%
