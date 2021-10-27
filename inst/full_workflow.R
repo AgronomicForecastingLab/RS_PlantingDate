@@ -15,8 +15,9 @@ require(RNetCDF)
 require(raster)
 
 install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies=TRUE)
-# Data cleaning and fitting workflow with the double logistic function
 
+
+# Data cleaning and fitting workflow with the double logistic function
 rm(list=ls())
 set.seed(102396)
 setwd('/Volumes/UIUC/libs/RS_PlantingDate')
@@ -29,66 +30,69 @@ setwd('/Volumes/UIUC/libs/RS_PlantingDate')
 # We need to remove duplicates of data points for the correct function of our workflow. I'm not sure where these doubles came from 
 temp <- read.csv('inst/data/organized/cleanedData.csv') %>% 
   mutate(Date = as.Date(Date)) %>%
-  distinct(ID, Date,.keep_all = TRUE)
+  distinct(ID, Date,.keep_all = TRUE) %>%
+  dplyr::select(-X.1, -X)
 
-# Remove any sites with late DOS values or with DOS values after harvest (dataset errors).
-temp <- temp %>% filter(dos < 182, dos < doh)
-
-# Remove any non-corn sites (corn is 'Family 1').
-temp = temp %>% filter(Family == 1)
-
-# Some of the plots have bad locations provided; I manually found them and here we remove them 
-bads = read.table('inst/data/unclearPlots.txt') %>%
-  mutate(ID = as.numeric(V1))
-temp = temp %>% filter(!(ID %in% bads))
+# Already removed any sites with late DOS values or with DOS values after harvest (dataset errors).
+# Already removed any non-corn sites (corn is 'Family 1')
 
 # Store a version of `temp` before data cleaning to use in later comparison. 
 before = temp
 IDs = unique(temp$ID)
 before = before %>% mutate(
   Date = as.Date(Date),
-  DOY = as.integer(Date - as.Date('2016-12-31'))
+  DOY = as.integer(Date - as.Date(paste0(Year-1,'-12-31'))),
+  DAS =  as.integer(Date - as.Date(PLANTED))
 )
 
 # 1: First let's remove outliers (MEAN +/- 3*SD)
-quants = data.frame(DOY = NULL, mn = NULL, upper = NULL, lower = NULL)
-incs = seq(1, 365, 10)
+quants = data.frame(DAS = NULL, mn = NULL, upper = NULL, lower = NULL)
+incs = seq(-170, 270, 10)
 # determine the bounds 
 for (i in 2:length(incs)){
-  vals = before %>% filter(DOY < incs[i], DOY >= incs[i-1]) 
+  vals = before %>% filter(DAS < incs[i], DAS >= incs[i-1]) 
   std = sd(vals$NDVI)
   mn = mean(vals$NDVI)
   quants = rbind(quants, 
                  data.frame(mn = mn, 
-                            DOY = mean(incs[(i-1):i]),
+                            DAS = mean(incs[(i-1):i]),
                             upper = mn + (3*std),
                             lower = mn - (3*std)))
 }
 
 # Figure: Demonstrate the bounds of the data where we need to perform removals 
 ggplot(before) + 
-  geom_point(aes( x= DOY, y = NDVI), alpha = 0.15) +
-  geom_ribbon(data = quants, aes( x = DOY, ymin = lower, ymax = upper, y = mn),color = 'red', linetype = 'dashed', fill = 'red',alpha = 0.05) +
-  geom_line(data = quants, aes( x= DOY, y = mn), color = 'red', size = 2)
+  geom_point(aes( x= DAS, y = NDVI), alpha = 0.15) +
+  geom_ribbon(data = quants, aes( x = DAS, ymin = lower, ymax = upper, y = mn),color = 'red', linetype = 'dashed', fill = 'red',alpha = 0.05) +
+  geom_line(data = quants, aes( x= DAS, y = mn), color = 'red', size = 2)
 
 # now remove points outside of the bounds 
 mid = before[1,]
 for (i in 2:length(incs)){
-  vals = before %>% filter(DOY < incs[i], 
-                           DOY >= incs[i-1], 
+  vals = before %>% filter(DAS < incs[i], 
+                           DAS >= incs[i-1], 
                            NDVI <= quants$upper[i],
                            NDVI >= quants$lower[i])
   mid = rbind(mid, 
               vals)
 }
-mid = mid[-1,] %>% select(-DOY)
+mid = mid[-1,] %>% select(-X.1)
+
+# Figure: Demonstrate the cleaned data with the bounds 
+ggplot(mid) + 
+  geom_point(aes( x= DAS, y = NDVI), alpha = 0.15) +
+  geom_ribbon(data = quants, aes( x = DAS, ymin = lower, ymax = upper, y = mn),color = 'red', linetype = 'dashed', fill = 'red',alpha = 0.05) +
+  geom_line(data = quants, aes( x= DAS, y = mn), color = 'red', size = 2)
 
 # 2: Remove any values before April with NDVI values greater than ???
-bad <- mid %>% filter(Date < as.Date('2017-05-01'), NDVI > 0.375)
-mid <- mid %>% filter(!(X %in% bad$X))
+#bad <- mid %>% filter(Date < as.Date('2017-05-01'), NDVI > 0.375)
+#mid <- mid %>% filter(!(X %in% bad$X))
 
 # 3: Apply spline cleaning function here 
-temp <- clean_spline(orig_df = mid)
+#temp <- clean_spline(orig_df = mid %>% dplyr::select(-Year,-class,-DOY,-DAS))
+
+temp = mid
+IDs = unique(temp$ID)
 
 # 4: Remove any sites with fewer than 7 data points.
 finalIDs = c()
@@ -98,13 +102,13 @@ for (i in 1:length(IDs)) {
     finalIDs = c(finalIDs, IDs[i])
 }
 temp <- temp %>% dplyr::filter(ID %in% finalIDs)
-#save(temp, file = 'inst/data/cleaned_corn_data.Rdata')
+save(temp, file = 'inst/data/organized/cleaned_corn_data.Rdata')
 
 # Figure: Generate 16 plots comparing uncleaned and cleaned data.
 cornIDs = unique(temp$ID)
-samples = sample(cornIDs, 16)
-compare_cleaned_plots(samples, before %>% dplyr::select(-DOY), temp)
-rm(quants, this, vals, finalIDs, IDs, incs, mn, samples, std, i)
+#samples = sample(cornIDs, 16)
+#compare_cleaned_plots(samples, before %>% dplyr::select(-X.1, -DOY, -class, -Year, -DAS), temp)
+rm(quants, this, vals, finalIDs, IDs, incs, mn, std, i)
 
 # 5: Now, we need to extract the needed met information for each location. 
 ## THIS PART STILL NEEDS TO BE DONE. 
@@ -118,13 +122,13 @@ rm(quants, this, vals, finalIDs, IDs, incs, mn, samples, std, i)
 
 trainIDs = sample(cornIDs, length(cornIDs) / 2, replace = FALSE)
 temp = temp %>% mutate(
-  Date = as.Date(Date),
-  DOY = as.integer(Date - as.Date('2016-12-31'))
+  Date = as.Date(Date)
+  #DOY = as.integer(Date - as.Date('2016-12-31'))
 )
 train = temp %>% filter(ID %in% trainIDs)
 test = temp %>% filter(!(ID %in% trainIDs))
 
-#save(test, train, file = 'inst/data/test_train_data.Rdata')
+save(test, train, file = 'inst/data/organized/test_train_data.Rdata')
 
 ##############################
 # II. Estimate emergence for each plot 
@@ -195,8 +199,7 @@ for (i in 1:length(ids)){
                             DOY = 1:365,
                             preds = predictDLOG(pars, 1:365)))
 }
-check = temp %>% mutate(Date = as.Date(Date), DOY = as.numeric(Date - as.Date('2016-12-31'))) %>%
-  filter(ID %in% ids)
+check = temp %>% mutate(Date = as.Date(Date)) %>% filter(ID %in% ids)
 
 # Dashed line shows fitted double logistic function for each plot 
 ggplot(check) +
