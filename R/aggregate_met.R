@@ -1,10 +1,9 @@
 #' Aggregates ERA5 met. data from an hourly to daily time step for the variable
 #' specified. 
 #'
-#' @param x x-dimension (width) of the NDVI images.
-#' @param y y-dimension(length) of the NDVI images.
-#' @param n number of observed dates.
-#' @return A x-y-n matrix of NDVI data.
+#' @param series
+#' @param df 
+#' @return A data frame with a column from the aggregated time series data.
 #' @export
 aggregate_met <- function(series, df) {
   start <- 1
@@ -24,6 +23,7 @@ aggregate_met <- function(series, df) {
   
   df$rownumber = 1:nrow(df)
   df <- df[df$rownumber %in% dont_remove,]
+  df <- subset(df, select=-c(rownumber))
 
   return(df)
 }
