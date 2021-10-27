@@ -14,88 +14,48 @@ require(maps)
 # Open the NetCDF so we can extract met data by variable:
 met_nc_data <- nc_open('inst/data/met_data.nc')
 
-# There are 3 dimensions in the met .nc (lat., lon., time).
-lon <- ncvar_get(met_nc_data, "longitude")
-lat <- ncvar_get(met_nc_data, "latitude")
-t <- ncvar_get(met_nc_data, "time")
-# Convert the time series units from NetCDF time to POSIXct R dates. 
-t.POSIXct <- utcal.nc("hours since 1900-01-01 00:00:00 +00:00", t, type="c")
-
-# note that you may have to play around with the transpose (the t() function)
-# and flip() before the data are oriented correctly. In this example, the netcdf
-# file recorded latitude on the X and longitude on the Y, so both a transpose 
-# and a flip in the y direction were required.
-# r <- raster(t(met.mx2t), xmn=min(lon), xmx=max(lon), ymn=min(lat), ymx=max(lat), crs=CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs+ towgs84=0,0,0"))
-# r <- flip(r, direction='y')
-# plot(r)
-
 met_nc_fname <- 'inst/data/met_data.nc'
 # "mx2t": max. air temperature
 met_nc_mx2t.b <- brick(met_nc_fname, varname="mx2t")
 # "mn2t": min. air temperature
 met_nc_mn2t.b <- brick(met_nc_fname, varname="mn2t")
 
-# Extract timeseries data from the raster brick
-t_lon <- -89.06
-t_lat <- 40.15
+# This is called `siteLoc` for whatever reason:
+load('inst/data/finalSiteLocations.Rdata')
 
-# Extract "mx2t" data for the site
-site_series <- extract(met_nc_mx2t.b, SpatialPoints(cbind(t_lon, t_lat)), method='simple')
-t_df <- data.frame(mx2t=t(site_series))
+n <- nrow(siteLoc) # 280
 
-# Aggregate "mx2t" data (hourly -> daily timestep)
-start <- 1
-end <- 24
-days <- length(site_series) # 8784
-dont_remove <- c()
+site_df <- data.frame(matrix(NA, nrow = 366, ncol = 1))
 
-while (end <= days) {
-  print(end)
-  agg_var <- sum(site_series[,start:end]) / 24
-  dont_remove <- c(dont_remove, start)
+# Extract site-specific timeseries data from the raster brick 
+for (i in 1:n) {
+  t_lat <- round(siteLoc[i,]$Latitude, digits=2)
+  t_lon <- round(siteLoc[i,]$Longitude, digits=2)
+
+  # Extract "mx2t" data for the site
+  site_series <- extract(met_nc_mx2t.b, SpatialPoints(cbind(t_lon, t_lat)), method='simple')
+  t_mx2t_df <- data.frame(mx2t=t(site_series))
+  agg_mx2t_df <- aggregate_met(site_series, t_df)
   
-  t_df[start,] = agg_var
-    
-  start <- start + 24
-  end <- end + 24 
+  # Call aggregation function, store returned list ("mx2t")
+  site_df$mx2t <- agg_mx2t_df
+  
+  # Convert units from K to C
+  site_df$mx2t <- site_df$mx2t - 273.15
+  
+  # Extract "mn2t" data for the site
+  t_mn2t_df <- data.frame(mn2t=t(site_series))
+  agg_mn2t_df <- aggregate_met(site_series, t_df)
+  
+  # Call aggregation function, store returned list ("mn2t")
+  site_df$mn2t <- agg_mn2t_df
+  
+  # Convert units from K to C
+  site_df$mn2t <- site_df$mn2t - 273.15
 }
 
-# Keep only the aggregated rows: 
-site_df <- t_df 
-site_df$rownumber = 1:nrow(t_df)
-site_df <- site_df[site_df$rownumber %in% dont_remove,]
-
-# Convert units from K to C
-site_df$mx2t <- site_df$mx2t - 273.15
-
-# Extract "mn2t" data for the site
-site_series <- extract(met_nc_mn2t.b, SpatialPoints(cbind(t_lon, t_lat)), method='simple')
-t_df <- data.frame(mn2t=t(site_series))
-
-# Aggregate "mn2t" data (hourly -> daily timestep)
-start <- 1
-end <- 24
-days <- length(site_series) # 8784
-dont_remove <- c()
-
-while (end <= days) {
-  print(end)
-  agg_var <- sum(site_series[,start:end]) / 24
-  dont_remove <- c(dont_remove, start)
-  
-  t_df[start,] = agg_var
-  
-  start <- start + 24
-  end <- end + 24 
-}
-
-# Keep only the aggregated rows: 
-t_df$rownumber = 1:nrow(t_df)
-t_df <- t_df[t_df$rownumber %in% dont_remove,]
-site_df$mn2t <- t_df$mn2t
-
-# Convert units from K to C
-site_df$mn2t <- site_df$mn2t - 273.15
+# Remove the NA column from `site_df`
+site_df <- site_df[,-c(1)]
 
 # Now that we have the avg. max. and min. daily temps, we can find GDD
 # GDD = ((Daily Max Temp °C + Daily Min Temp °C)/2) - 10 °C.
