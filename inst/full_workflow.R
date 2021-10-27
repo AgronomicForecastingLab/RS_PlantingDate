@@ -5,6 +5,14 @@ require(zoo)
 require(greenbrown)
 require(RSPlantingDate)
 require(devtools)
+require(ncdf4)
+require(ncmeta)
+require(stars)
+require(units)
+require(ecmwfr)
+require(ggplot2)
+require(RNetCDF)
+require(raster)
 
 install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies=TRUE)
 # Data cleaning and fitting workflow with the double logistic function
@@ -208,18 +216,51 @@ ggplot(check) +
 # III. Use climate data to estimate planting date from emergence  
 ##############################
 
-## We need to determine a method to do this part, too. 
+load('inst/data/finalSiteLocations.Rdata')
 
-# Replace `user`, `key` values with CDS account username, API key. 
-user <- "10027"
-key <- "e5d0082f-ae4d-44d6-a1e0-3b581282033f"
-wf_set_key(user = user, key = key, 'cds')
+# Open the NetCDF so we can extract met data by variable:
+met_nc_data <- nc_open('inst/data/met_data.nc')
+met_nc_fname <- 'inst/data/met_data.nc'
+# "mx2t": max. air temperature
+met_nc_mx2t.b <- brick(met_nc_fname, varname="mx2t")
+# "mn2t": min. air temperature
+met_nc_mn2t.b <- brick(met_nc_fname, varname="mn2t")
 
-met_ncfile <- wf_request(user = "67047",
-                            request = request,   
-                            transfer = TRUE,  
-                            path = "~",
-                            verbose = FALSE)
+# Extract site-specific time-series data from the raster brick 
+met_df_71030 <- get_site_met(siteLoc, 71030, met_nc_mx2t.b, met_nc_mn2t.b)
+# Remove the NA column from `site_df`
+site_df <- site_df[,-c(1)]
+
+# Remove the .nc data variable and close the met. ncfile
+rm(met_nc_data)
+nc_close('inst/data/met_data.nc')
+
+# Calculate GDD (Growing Degree Days)
+# https://ndawn.ndsu.nodak.edu/help-corn-growing-degree-days.html
+
+# Daily Corn GDD (°C) = ((Daily Max Temp °C + Daily Min Temp °C)/2) - 10 °C
+# Following constraints:
+#   --> If daily Max Temp > 30 °C, it's set equal to 30 °C.
+#   --> If daily Max or Min Temp < 10 °C, it's set equal to 10°C. 
+
+gdd_list <- c()
+for (i in 1:nrow(site_df)) {
+  max_temp <- site_df[i,]$mx2t$mx2t
+  min_temp <- site_df[i,]$mn2t$mx2t
+  
+  if (max_temp > 30) {
+    max_temp = 30
+  } else if (max_temp < 10) {
+    max_temp = 10
+  } 
+  if (min_temp < 10) {
+    min_temp = 10
+  }
+  
+  gdd <- ((max_temp + min_temp)/2) - 10
+  gdd_list <- c(gdd_list, gdd)
+}
+site_df$GDD <- gdd_list
 
 ################################################
 # IV. Apply the final model to the test dataset to evaluate performance 
