@@ -19,7 +19,6 @@ install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies=TRUE)
 
 rm(list=ls())
 set.seed(102396)
-setwd('/Volumes/UIUC/libs/RS_PlantingDate')
 
 ##############################
 # I. Prepare the data 
@@ -30,6 +29,8 @@ setwd('/Volumes/UIUC/libs/RS_PlantingDate')
 temp <- read.csv('inst/data/organized/cleanedData.csv') %>% 
   mutate(Date = as.Date(Date)) %>%
   distinct(ID, Date,.keep_all = TRUE)
+
+# nrow(distinct(temp, ID)) # 562 sites in Beck's df
 
 # Remove any sites with late DOS values or with DOS values after harvest (dataset errors).
 temp <- temp %>% filter(dos < 182, dos < doh)
@@ -87,8 +88,8 @@ mid = mid[-1,] %>% select(-DOY)
 bad <- mid %>% filter(Date < as.Date('2017-05-01'), NDVI > 0.375)
 mid <- mid %>% filter(!(X %in% bad$X))
 
-# 3: Apply spline cleaning function here 
-temp <- clean_spline(orig_df = mid)
+# 3: Apply spline cleaning function here (we are potentially not using this)
+# temp <- clean_spline(orig_df = mid)
 
 # 4: Remove any sites with fewer than 7 data points.
 finalIDs = c()
@@ -98,7 +99,7 @@ for (i in 1:length(IDs)) {
     finalIDs = c(finalIDs, IDs[i])
 }
 temp <- temp %>% dplyr::filter(ID %in% finalIDs)
-#save(temp, file = 'inst/data/cleaned_corn_data.Rdata')
+# save(temp, file = 'inst/data/cleaned_corn_data.Rdata')
 
 # Figure: Generate 16 plots comparing uncleaned and cleaned data.
 cornIDs = unique(temp$ID)
@@ -116,7 +117,8 @@ rm(quants, this, vals, finalIDs, IDs, incs, mn, samples, std, i)
 # Setting a seed in the script is important here so we can always get the same datasets 
 # if we have to rerun this script. 
 
-trainIDs = sample(cornIDs, length(cornIDs) / 2, replace = FALSE)
+load('inst/data/finalSiteLocations.Rdata') # `siteLoc` df
+trainIDs = c(siteLoc$ID) # 280 sites
 temp = temp %>% mutate(
   Date = as.Date(Date),
   DOY = as.integer(Date - as.Date('2016-12-31'))
@@ -124,13 +126,18 @@ temp = temp %>% mutate(
 train = temp %>% filter(ID %in% trainIDs)
 test = temp %>% filter(!(ID %in% trainIDs))
 
-#save(test, train, file = 'inst/data/test_train_data.Rdata')
+blah <- train %>% distinct(ID)
+blah_IDs <- c(blah$ID)
+
+skipped_IDs <- trainIDs[!trainIDs %in% blah_IDs]
+
 
 ##############################
 # II. Estimate emergence for each plot 
 ##############################
 
 # 1: Fit the double-logistic function to each site
+# Store the DLF parameters in the `dlog.data` df: 
 dlog.data = data.frame(
   ID = NULL,
   mn = NULL,
@@ -157,9 +164,10 @@ dlog.data = data.frame(
 
 # Iterate through all training plots, fit a double logistic, 
 # and record the fitted parameters in dlog.data.
-pb = txtProgressBar(0, 1, style=3)
+#pb = txtProgressBar(0, 1, style=3)
 for (i in 1:length(trainIDs)) {
-  setTxtProgressBar(pb, i/length(trainIDs))
+  #setTxtProgressBar(pb, i/length(trainIDs))
+  print(trainIDs[i])
   this = train %>% filter(ID == trainIDs[i]) %>% distinct(DOY, .keep_all = TRUE)
   if (nrow(this) == 0) next
   res = fit_double_logistic(x = this$NDVI, t = this$DOY)
