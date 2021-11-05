@@ -16,7 +16,6 @@ require(raster)
 
 install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies=TRUE)
 
-
 # Data cleaning and fitting workflow with the double logistic function
 rm(list=ls())
 set.seed(102396)
@@ -29,20 +28,17 @@ set.seed(102396)
 # We need to remove duplicates of data points for the correct function of our workflow. I'm not sure where these doubles came from 
 temp <- read.csv('inst/data/organized/cleanedData.csv') %>% 
   mutate(Date = as.Date(Date)) %>%
-<<<<<<< HEAD
   distinct(ID, Date,.keep_all = TRUE)
 
-# nrow(distinct(temp, ID)) # 562 sites in Beck's df
+# nrow(distinct(temp, ID)) # 280 sites in Beck's df
 
 # Remove any sites with late DOS values or with DOS values after harvest (dataset errors).
 temp <- temp %>% filter(dos < 182, dos < doh)
 
 # Remove any non-corn sites (corn is 'Family 1').
 temp = temp %>% filter(Family == 1)
-=======
   distinct(ID, Date,.keep_all = TRUE) %>%
   dplyr::select(-X.1, -X)
->>>>>>> origin/main
 
 # Already removed any sites with late DOS values or with DOS values after harvest (dataset errors).
 # Already removed any non-corn sites (corn is 'Family 1')
@@ -99,16 +95,11 @@ ggplot(mid) +
 #bad <- mid %>% filter(Date < as.Date('2017-05-01'), NDVI > 0.375)
 #mid <- mid %>% filter(!(X %in% bad$X))
 
-<<<<<<< HEAD
-# 3: Apply spline cleaning function here (we are potentially not using this)
-# temp <- clean_spline(orig_df = mid)
-=======
 # 3: Apply spline cleaning function here 
 #temp <- clean_spline(orig_df = mid %>% dplyr::select(-Year,-class,-DOY,-DAS))
 
 temp = mid
 IDs = unique(temp$ID)
->>>>>>> origin/main
 
 # 4: Remove any sites with fewer than 7 data points.
 finalIDs = c()
@@ -118,30 +109,25 @@ for (i in 1:length(IDs)) {
     finalIDs = c(finalIDs, IDs[i])
 }
 temp <- temp %>% dplyr::filter(ID %in% finalIDs)
-<<<<<<< HEAD
-# save(temp, file = 'inst/data/cleaned_corn_data.Rdata')
-=======
 save(temp, file = 'inst/data/organized/cleaned_corn_data.Rdata')
->>>>>>> origin/main
 
 # Figure: Generate 16 plots comparing uncleaned and cleaned data.
 cornIDs = unique(temp$ID)
 #samples = sample(cornIDs, 16)
 #compare_cleaned_plots(samples, before %>% dplyr::select(-X.1, -DOY, -class, -Year, -DAS), temp)
-rm(quants, this, vals, finalIDs, IDs, incs, mn, std, i)
+rm(quants, this, vals, finalIDs, IDs, incs, mn, std, i, mid)
 
 # 5: Now, we need to extract the needed met information for each location. 
 ## THIS PART STILL NEEDS TO BE DONE. 
 
-# 6: Now, let's separate the data into separate groups: test and train. 
+# 6: We split the data into 2 halves: test and train. 
 # We can use the train dataset to explore and fit the data. 
 # We can use the test dataset to see how the final model works. 
 # Randomly select training and test data.
 # Setting a seed in the script is important here so we can always get the same datasets 
 # if we have to rerun this script. 
 
-load('inst/data/finalSiteLocations.Rdata') # `siteLoc` df
-trainIDs = c(siteLoc$ID) # 280 sites
+trainIDs = sample(cornIDs, length(cornIDs) / 2, replace = FALSE)
 temp = temp %>% mutate(
   Date = as.Date(Date)
   #DOY = as.integer(Date - as.Date('2016-12-31'))
@@ -149,15 +135,8 @@ temp = temp %>% mutate(
 train = temp %>% filter(ID %in% trainIDs)
 test = temp %>% filter(!(ID %in% trainIDs))
 
-<<<<<<< HEAD
-blah <- train %>% distinct(ID)
-blah_IDs <- c(blah$ID)
-
-skipped_IDs <- trainIDs[!trainIDs %in% blah_IDs]
-
-=======
 save(test, train, file = 'inst/data/organized/test_train_data.Rdata')
->>>>>>> origin/main
+rm(cornIDs)
 
 ##############################
 # II. Estimate emergence for each plot 
@@ -191,15 +170,20 @@ dlog.data = data.frame(
 
 # Iterate through all training plots, fit a double logistic, 
 # and record the fitted parameters in dlog.data.
-#pb = txtProgressBar(0, 1, style=3)
+pb = txtProgressBar(0, 1, style=3)
 for (i in 1:length(trainIDs)) {
-  #setTxtProgressBar(pb, i/length(trainIDs))
+  setTxtProgressBar(pb, i/length(trainIDs))
   print(trainIDs[i])
   this = train %>% filter(ID == trainIDs[i]) %>% distinct(DOY, .keep_all = TRUE)
   if (nrow(this) == 0) next
   res = fit_double_logistic(x = this$NDVI, t = this$DOY)
   if (any(!is.na(res))) dlog.data = rbind(dlog.data, res)
 }
+
+max(dlog.data$sos) # 215.95
+min(dlog.data$sos) # 105.24
+mean(dlog.data$sos) # 166.33
+sd(dlog.data$sos) # 15.54
 
 #ggpairs(dlog.data %>% dplyr::select(mn,mx,sos,eos,rau,rsp,lat,lon,dos))
 
@@ -241,10 +225,29 @@ ggplot(check) +
   labs(color = 'Data Cleaning',
        linetype = NULL)
 
+ggplot(site_for_test) +
+  geom_point(aes(x=DOY, y=NDVI)) + 
+  geom_line(aes(x = DOY, y = NDVI), linetype = 'solid', color = 'red')
+
 # 3: Estimate emergence for each plot based on fitted double logistic curve 
 ## WE NEED TO FIGURE THIS PART OUT 
 # I think we should have one function that estimates emergence based on a fitted double logistic function. 
 # The script would just need the fitted parameters and would return a DOY for emergence. 
+
+########################
+# Predicting Emergence # ------------------------------------------------------
+########################
+
+# We can either use Sentinel data or the fitted double-logistic for this step?
+# Test on `site_for_test` (ID 57874)
+site_VI <- site_for_test$NDVI # time series VI
+
+# We will use MACD(5, 10, 5). (Gao et al. 2020)
+# I.e., S = 5 days ("fast" EMA), L = 10 days ("slow" EMA), 
+# K = 5 days ("signal"/"average" EMA)
+
+myema_short <- my
+macd_ndvi <- MACD_VI(VI, 5, 10, 5)
 
 ##############################
 # III. Use climate data to estimate planting date from emergence  
