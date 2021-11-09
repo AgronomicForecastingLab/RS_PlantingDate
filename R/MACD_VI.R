@@ -10,9 +10,9 @@
 #' @return A MACD time-series
 #' @export
 MACD_VI <- function(ndvi, S, L, K) {
-  MACD <- EMA_VI(ndvi,S) - EMA_VI(ndvi,L)
-  signal <- EMA_VI(MACD,K)
-  output <- cbind(MACD,signal)
-  colnames(output) <- c("MACD","signal")
+  MACD <- EMA_VI(ndvi, S) - EMA_VI(ndvi, L)
+  signal <- EMA_VI(MACD, K)
+  output <- cbind(MACD, signal)
+  colnames(output) <- c("MACD", "signal")
   return(output)
 }
