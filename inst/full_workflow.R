@@ -30,19 +30,6 @@ temp <- read.csv('inst/data/organized/cleanedData.csv') %>%
   mutate(Date = as.Date(Date)) %>%
   distinct(ID, Date,.keep_all = TRUE)
 
-# nrow(distinct(temp, ID)) # 280 sites in Beck's df
-
-# Remove any sites with late DOS values or with DOS values after harvest (dataset errors).
-temp <- temp %>% filter(dos < 182, dos < doh)
-
-# Remove any non-corn sites (corn is 'Family 1').
-temp = temp %>% filter(Family == 1)
-  distinct(ID, Date,.keep_all = TRUE) %>%
-  dplyr::select(-X.1, -X)
-
-# Already removed any sites with late DOS values or with DOS values after harvest (dataset errors).
-# Already removed any non-corn sites (corn is 'Family 1')
-
 # Store a version of `temp` before data cleaning to use in later comparison. 
 before = temp
 IDs = unique(temp$ID)
@@ -90,13 +77,6 @@ ggplot(mid) +
   geom_point(aes( x= DAS, y = NDVI), alpha = 0.15) +
   geom_ribbon(data = quants, aes( x = DAS, ymin = lower, ymax = upper, y = mn),color = 'red', linetype = 'dashed', fill = 'red',alpha = 0.05) +
   geom_line(data = quants, aes( x= DAS, y = mn), color = 'red', size = 2)
-
-# 2: Remove any values before April with NDVI values greater than ???
-#bad <- mid %>% filter(Date < as.Date('2017-05-01'), NDVI > 0.375)
-#mid <- mid %>% filter(!(X %in% bad$X))
-
-# 3: Apply spline cleaning function here 
-#temp <- clean_spline(orig_df = mid %>% dplyr::select(-Year,-class,-DOY,-DAS))
 
 temp = mid
 IDs = unique(temp$ID)
@@ -173,17 +153,11 @@ dlog.data = data.frame(
 pb = txtProgressBar(0, 1, style=3)
 for (i in 1:length(trainIDs)) {
   setTxtProgressBar(pb, i/length(trainIDs))
-  print(trainIDs[i])
   this = train %>% filter(ID == trainIDs[i]) %>% distinct(DOY, .keep_all = TRUE)
   if (nrow(this) == 0) next
   res = fit_double_logistic(x = this$NDVI, t = this$DOY)
   if (any(!is.na(res))) dlog.data = rbind(dlog.data, res)
 }
-
-max(dlog.data$sos) # 215.95
-min(dlog.data$sos) # 105.24
-mean(dlog.data$sos) # 166.33
-sd(dlog.data$sos) # 15.54
 
 #ggpairs(dlog.data %>% dplyr::select(mn,mx,sos,eos,rau,rsp,lat,lon,dos))
 
@@ -216,18 +190,13 @@ for (i in 1:length(ids)){
 }
 check = temp %>% mutate(Date = as.Date(Date)) %>% filter(ID %in% ids)
 
+
 # Dashed line shows fitted double logistic function for each plot 
-ggplot(check) +
-  geom_point(aes(x = DOY, y = NDVI)) + 
-  geom_line(data = fitted, aes(x = DOY, y = preds), linetype = 'dashed')+
+ggplot(site_preds) +
+  geom_point(aes(x = DOY, y = preds)) + 
   scale_linetype_manual(values = c('cleaned'='dashed', 'fitted'='solid')) +
-  facet_wrap(~ID, nrow = 4) +
   labs(color = 'Data Cleaning',
        linetype = NULL)
-
-ggplot(site_for_test) +
-  geom_point(aes(x=DOY, y=NDVI)) + 
-  geom_line(aes(x = DOY, y = NDVI), linetype = 'solid', color = 'red')
 
 # 3: Estimate emergence for each plot based on fitted double logistic curve 
 ## WE NEED TO FIGURE THIS PART OUT 
@@ -240,14 +209,34 @@ ggplot(site_for_test) +
 
 # We can either use Sentinel data or the fitted double-logistic for this step?
 # Test on `site_for_test` (ID 57874)
-site_VI <- site_for_test$NDVI # time series VI
-
-# We will use MACD(5, 10, 5). (Gao et al. 2020)
-# I.e., S = 5 days ("fast" EMA), L = 10 days ("slow" EMA), 
-# K = 5 days ("signal"/"average" EMA)
-
-myema_short <- my
-macd_ndvi <- MACD_VI(VI, 5, 10, 5)
+for (i in 1:length(trainIDs)) {
+  site = train %>% filter(ID == trainIDs[i])
+  pars = as.vector(dlog.data %>% filter(ID == trainIDs[i]) %>% dplyr::select(mn, mx, sos, rsp, eos, rau))
+  site_preds = data.frame(ID = rep(trainIDs[i], 365),
+                            DOY = 1:365,
+                            preds = predictDLOG(pars, 1:365))
+  
+  site_VI <- site_preds$preds # time series VI
+  
+  # We will use MACD(5, 10, 5). (Gao et al. 2020)
+  # I.e., S = 5 days ("fast" EMA), L = 10 days ("slow" EMA), 
+  # K = 5 days ("signal"/"average" EMA)
+  macd_t <- MACD_VI(site_VI, 5, 10, 10)
+  site_preds$macd_t <- macd_t[,1]
+  site_preds$ema_macd_c <- macd_t[,2]
+  site_preds$macd_div_t <- site_preds$macd_t - site_preds$ema_macd_c
+  
+  ## Use a horizontal line to mark `macd_div_t` peak
+  emerg_row <- site_preds[which.max(site_preds$macd_div_t),]
+  
+  ggplot(site_preds) +
+    geom_line(aes(x = DOY, y = preds), linetype = 'solid') +
+    geom_line(aes(x = DOY, y = macd_t), linetype = 'solid', color = 'blue') +
+    geom_line(aes(x = DOY, y = macd_div_t), linetype = 'solid', color = 'red') +
+    geom_line(aes(x = DOY, y = ema_macd_c), linetype = 'dotted', color = 'purple') + 
+    geom_vline(xintercept = emerg_row$DOY, linetype = 'dashed', color = 'red') + 
+    geom_point(aes(x = emerg_row$DOY, y = preds[emerg_row$DOY]))
+}
 
 ##############################
 # III. Use climate data to estimate planting date from emergence  
