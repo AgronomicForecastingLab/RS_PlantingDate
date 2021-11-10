@@ -159,7 +159,7 @@ for (i in 1:length(trainIDs)) {
   if (any(!is.na(res))) dlog.data = rbind(dlog.data, res)
 }
 
-#ggpairs(dlog.data %>% dplyr::select(mn,mx,sos,eos,rau,rsp,lat,lon,dos))
+# ggpairs(dlog.data %>% dplyr::select(mn,mx,sos,eos,rau,rsp,lat,lon,dos))
 
 # 2: Limit our fits to the ones that are actually reasonable by setting limits on some of the parameters 
 bounds = list(
@@ -207,7 +207,9 @@ ggplot(site_preds) +
 # Predicting Emergence # ------------------------------------------------------
 ########################
 
-# We can either use Sentinel data or the fitted double-logistic for this step?
+emerg_sample <- sample(1:length(trainIDs), 10)
+
+# We can either use Sentinel/Harmonized Sentinel Landsat-8 data or the fitted double-logistic for this step?
 # Test on `site_for_test` (ID 57874)
 for (i in 1:length(trainIDs)) {
   site = train %>% filter(ID == trainIDs[i])
@@ -226,8 +228,51 @@ for (i in 1:length(trainIDs)) {
   site_preds$ema_macd_c <- macd_t[,2]
   site_preds$macd_div_t <- site_preds$macd_t - site_preds$ema_macd_c
   
+  # Settings (0.0, 0.0) for (MACD_threshold, MACD_div_threshold) are
+  # standard settings to track trend changes in stock prices. 
+  macd_threshold <- 0.0
+  macd_div_threshold <- 0.0
+  # The settings of 0.01 and 0.85 for NDVI at the green-up dates represent
+  # a wide range of acceptable green-up conditions since NDVI and EVI2 at 
+  # green-up time are very low.
+  min_VI_greenup <- 0.01
+  max_VI_greenup <- 0.85
+  VI_increase_doys <- c()
+  
+  max_ndvi_doy <- site_preds[which.max(site_preds$preds),]$DOY
+  
+  for (j in 11:max_ndvi_doy) {
+    in_VI_range <- site_preds$preds[j] > min_VI_greenup && site_preds$preds[j] < max_VI_greenup
+    macd_div_x_intercept <-
+      (
+        site_preds$macd_div_t[j - 1] < macd_div_threshold &&
+          site_preds$macd_div_t[j] > macd_div_threshold
+      ) 
+    #macd_within_range <- macd_t[j] < macd_threshold
+    
+    #||
+     # (
+      #  site_preds$macd_div_t[j - 1] > macd_div_threshold &&
+      #    site_preds$macd_div_t[j] < macd_div_threshold
+    #  )
+    
+    if (in_VI_range && macd_div_x_intercept) {
+     VI_increase_doys <- c(VI_increase_doys, j)
+    }
+  }
+  
+  momentums <- data.frame(DOY = VI_increase_doys, NDVI = NA)
+  
+  for (k in 1:length(VI_increase_doys)) {
+    site_row <- site_preds[VI_increase_doys[k],]
+    momentums[k,]$NDVI = site_row$preds
+  }
+
   ## Use a horizontal line to mark `macd_div_t` peak
-  emerg_row <- site_preds[which.max(site_preds$macd_div_t),]
+  emerg_row <- site_preds[VI_increase_doys[1],]
+  
+  ## Use a horizontal line to mark actual planting date
+  site_dos <- (temp %>% filter(ID == trainIDs[i]))[1,]$dos
   
   ggplot(site_preds) +
     geom_line(aes(x = DOY, y = preds), linetype = 'solid') +
@@ -235,7 +280,9 @@ for (i in 1:length(trainIDs)) {
     geom_line(aes(x = DOY, y = macd_div_t), linetype = 'solid', color = 'red') +
     geom_line(aes(x = DOY, y = ema_macd_c), linetype = 'dotted', color = 'purple') + 
     geom_vline(xintercept = emerg_row$DOY, linetype = 'dashed', color = 'red') + 
-    geom_point(aes(x = emerg_row$DOY, y = preds[emerg_row$DOY]))
+    geom_vline(xintercept = site_dos, linetype = 'dashed', color = 'green') +
+    geom_point(aes(x = momentums$DOY, y = momentums$NDVI)) + 
+    ggtitle(toString(site_preds[1,]$ID))
 }
 
 ##############################
