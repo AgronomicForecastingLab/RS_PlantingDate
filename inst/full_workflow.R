@@ -125,27 +125,18 @@ rm(cornIDs)
 # 1: Fit the double-logistic function to each site
 # Store the DLF parameters in the `dlog.data` df: 
 dlog.data = data.frame(
-  ID = NULL,
-  mn = NULL,
-  # winter NDVI (minimum)
-  mx = NULL,
-  # maximum NDVI
-  sos = NULL,
-  # start of season
-  rsp = NULL,
-  # initial slope
-  eos = NULL,
-  # end of season
-  rau = NULL,
-  # ending slope
-  dos = NULL,
-  # day of sowing
-  lat = NULL,
-  # latitude
-  lon = NULL,
-  # longitude
-  maxDOY = NULL
-  # day of year where NDVI is at maximum following model
+  ID = NULL, # Beck's ID of site
+  mn = NULL, # Winter NDVI (minimum)
+  mx = NULL, # Maximum NDVI
+  sos = NULL, # Start of season
+  rsp = NULL, # Initial slope
+  eos = NULL, # End of season
+  rau = NULL, # Ending slope
+  dos = NULL, # Day of sowing
+  lat = NULL, # Latitude
+  lon = NULL, # Longitude
+  maxDOY = NULL, # Day of year where NDVI is at maximum following model
+  doe = NULL # Day of emergence
 ) 
 
 # Iterate through all training plots, fit a double logistic, 
@@ -198,19 +189,15 @@ ggplot(site_preds) +
   labs(color = 'Data Cleaning',
        linetype = NULL)
 
-# 3: Estimate emergence for each plot based on fitted double logistic curve 
-## WE NEED TO FIGURE THIS PART OUT 
-# I think we should have one function that estimates emergence based on a fitted double logistic function. 
-# The script would just need the fitted parameters and would return a DOY for emergence. 
-
 ########################
 # Predicting Emergence # ------------------------------------------------------
 ########################
 
+# Predict and plot emergence of a sample of 10 sites.
 emerg_sample <- sample(1:length(trainIDs), 10)
 
-# We can either use Sentinel/Harmonized Sentinel Landsat-8 data or the fitted double-logistic for this step?
-# Test on `site_for_test` (ID 57874)
+# We can either use Sentinel/Harmonized Sentinel Landsat-8 data or the fitted 
+# double-logistic for this step?
 for (i in 1:length(trainIDs)) {
   site = train %>% filter(ID == trainIDs[i])
   pars = as.vector(dlog.data %>% filter(ID == trainIDs[i]) %>% dplyr::select(mn, mx, sos, rsp, eos, rau))
@@ -218,7 +205,7 @@ for (i in 1:length(trainIDs)) {
                             DOY = 1:365,
                             preds = predictDLOG(pars, 1:365))
   
-  site_VI <- site_preds$preds # time series VI
+  site_VI <- site_preds$preds # VI time-series for the site. 
   
   # We will use MACD(5, 10, 5). (Gao et al. 2020)
   # I.e., S = 5 days ("fast" EMA), L = 10 days ("slow" EMA), 
@@ -228,41 +215,45 @@ for (i in 1:length(trainIDs)) {
   site_preds$ema_macd_c <- macd_t[,2]
   site_preds$macd_div_t <- site_preds$macd_t - site_preds$ema_macd_c
   
-  # Settings (0.0, 0.0) for (MACD_threshold, MACD_div_threshold) are
-  # standard settings to track trend changes in stock prices. 
-  macd_threshold <- 0.0
-  macd_div_threshold <- 0.0
-  # The settings of 0.01 and 0.85 for NDVI at the green-up dates represent
-  # a wide range of acceptable green-up conditions since NDVI and EVI2 at 
-  # green-up time are very low.
+  # Settings (0.0, 0.0) for (MACD_threshold, MACD_div_threshold) are standard 
+  # settings to track trend changes in stock prices. 
+  # We adjust to use settings (0.1, 0.01) here (the fitted DL has uniform tails).
+  macd_threshold <- 0.1
+  macd_div_threshold <- 0.01
+  
+  # The settings of 0.01 and 0.85 for NDVI at the green-up dates represent a 
+  # wide range of acceptable green-up conditions since NDVI and EVI2 at green-up
+  # time are very low.
   min_VI_greenup <- 0.01
-  max_VI_greenup <- 0.85
+  max_VI_greenup <- 0.90
   VI_increase_doys <- c()
   
   max_ndvi_doy <- site_preds[which.max(site_preds$preds),]$DOY
   
+  # We check for momentum points with the various conditions described by 
+  # Gao et al. (2020).
+  # (ex:
+  #   -- Is the NDVI at this doy within a reasonable range of NDVI values?, 
+  #   -- Does the MACD begin to increase exponentially?, 
+  #   -- Is the MACD within a reasonable range? 
+  # )
   for (j in 11:max_ndvi_doy) {
-    in_VI_range <- site_preds$preds[j] > min_VI_greenup && site_preds$preds[j] < max_VI_greenup
+    in_VI_range <-
+      site_preds$preds[j] > min_VI_greenup &&
+      site_preds$preds[j] < max_VI_greenup
     macd_div_x_intercept <-
       (
         site_preds$macd_div_t[j - 1] < macd_div_threshold &&
           site_preds$macd_div_t[j] > macd_div_threshold
       ) 
-    #macd_within_range <- macd_t[j] < macd_threshold
+    macd_within_range <- macd_t[j] < macd_threshold
     
-    #||
-     # (
-      #  site_preds$macd_div_t[j - 1] > macd_div_threshold &&
-      #    site_preds$macd_div_t[j] < macd_div_threshold
-    #  )
-    
-    if (in_VI_range && macd_div_x_intercept) {
+    if (in_VI_range && macd_div_x_intercept && macd_within_range) {
      VI_increase_doys <- c(VI_increase_doys, j)
     }
   }
   
   momentums <- data.frame(DOY = VI_increase_doys, NDVI = NA)
-  
   for (k in 1:length(VI_increase_doys)) {
     site_row <- site_preds[VI_increase_doys[k],]
     momentums[k,]$NDVI = site_row$preds
@@ -274,6 +265,8 @@ for (i in 1:length(trainIDs)) {
   ## Use a horizontal line to mark actual planting date
   site_dos <- (temp %>% filter(ID == trainIDs[i]))[1,]$dos
   
+  # Plot the fitted DL for the site, along with observed planting date and 
+  # predicted emergence date.
   ggplot(site_preds) +
     geom_line(aes(x = DOY, y = preds), linetype = 'solid') +
     geom_line(aes(x = DOY, y = macd_t), linetype = 'solid', color = 'blue') +
@@ -283,57 +276,55 @@ for (i in 1:length(trainIDs)) {
     geom_vline(xintercept = site_dos, linetype = 'dashed', color = 'green') +
     geom_point(aes(x = momentums$DOY, y = momentums$NDVI)) + 
     ggtitle(toString(site_preds[1,]$ID))
+  
+  # Store 'doe' for the site (a.k.a. day of emergence).
+  dlog.data[dlog.data$ID == trainIDs[i], ]$doe <- emerg_row$DOY 
 }
 
 ##############################
 # III. Use climate data to estimate planting date from emergence  
 ##############################
 
-load('inst/data/finalSiteLocations.Rdata')
-
 # Open the NetCDF so we can extract met data by variable:
 met_nc_data <- nc_open('inst/data/met_data.nc')
 met_nc_fname <- 'inst/data/met_data.nc'
-# "mx2t": max. air temperature
-met_nc_mx2t.b <- brick(met_nc_fname, varname="mx2t")
-# "mn2t": min. air temperature
-met_nc_mn2t.b <- brick(met_nc_fname, varname="mn2t")
 
-# Extract site-specific time-series data from the raster brick 
-met_df_71030 <- get_site_met(siteLoc, 71030, met_nc_mx2t.b, met_nc_mn2t.b)
-# Remove the NA column from `site_df`
-site_df <- site_df[,-c(1)]
+met_nc_mx2t.b <- brick(met_nc_fname, varname="mx2t") # "mx2t" (max. air temp.)
+met_nc_mn2t.b <- brick(met_nc_fname, varname="mn2t") # "mn2t" (min. air temp.)
 
-# Remove the .nc data variable and close the met. ncfile
+# Extract site-specific time-series data from the raster brick. 
+for (i in 1:length(trainIDs)) {
+  met_df <- get_site_met(train, trainIDs[i], met_nc_mx2t.b, met_nc_mn2t.b)
+  
+  # Calculate GDD (Growing Degree Days)
+  # https://ndawn.ndsu.nodak.edu/help-corn-growing-degree-days.html
+  # Daily Corn GDD (°C) = ((Daily Max Temp °C + Daily Min Temp °C)/2) - 10 °C
+  # Following constraints:
+  #   -- If daily Max Temp > 30 °C, set it equal to 30 °C.
+  #   -- If daily Max or Min Temp < 10 °C, set it equal to 10°C. 
+  gdd_list <- c()
+  for (i in 1:nrow(site_df)) {
+    max_temp <- site_df[i,]$mx2t$mx2t
+    min_temp <- site_df[i,]$mn2t$mx2t
+    
+    if (max_temp > 30) {
+      max_temp = 30
+    } else if (max_temp < 10) {
+      max_temp = 10
+    } 
+    if (min_temp < 10) {
+      min_temp = 10
+    }
+    
+    gdd <- ((max_temp + min_temp)/2) - 10
+    gdd_list <- c(gdd_list, gdd)
+  }
+  site_df$GDD <- gdd_list
+}
+
+# Remove the met. data variable and close the met. ncfile. 
 rm(met_nc_data)
 nc_close('inst/data/met_data.nc')
-
-# Calculate GDD (Growing Degree Days)
-# https://ndawn.ndsu.nodak.edu/help-corn-growing-degree-days.html
-
-# Daily Corn GDD (°C) = ((Daily Max Temp °C + Daily Min Temp °C)/2) - 10 °C
-# Following constraints:
-#   --> If daily Max Temp > 30 °C, it's set equal to 30 °C.
-#   --> If daily Max or Min Temp < 10 °C, it's set equal to 10°C. 
-
-gdd_list <- c()
-for (i in 1:nrow(site_df)) {
-  max_temp <- site_df[i,]$mx2t$mx2t
-  min_temp <- site_df[i,]$mn2t$mx2t
-  
-  if (max_temp > 30) {
-    max_temp = 30
-  } else if (max_temp < 10) {
-    max_temp = 10
-  } 
-  if (min_temp < 10) {
-    min_temp = 10
-  }
-  
-  gdd <- ((max_temp + min_temp)/2) - 10
-  gdd_list <- c(gdd_list, gdd)
-}
-site_df$GDD <- gdd_list
 
 ################################################
 # IV. Apply the final model to the test dataset to evaluate performance 
