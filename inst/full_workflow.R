@@ -198,19 +198,15 @@ ggplot(site_preds) +
   labs(color = 'Data Cleaning',
        linetype = NULL)
 
-# 3: Estimate emergence for each plot based on fitted double logistic curve 
-## WE NEED TO FIGURE THIS PART OUT 
-# I think we should have one function that estimates emergence based on a fitted double logistic function. 
-# The script would just need the fitted parameters and would return a DOY for emergence. 
-
 ########################
 # Predicting Emergence # ------------------------------------------------------
 ########################
 
+# Predict and plot emergence of a sample of 10 sites.
 emerg_sample <- sample(1:length(trainIDs), 10)
 
-# We can either use Sentinel/Harmonized Sentinel Landsat-8 data or the fitted double-logistic for this step?
-# Test on `site_for_test` (ID 57874)
+# We can either use Sentinel/Harmonized Sentinel Landsat-8 data or the fitted 
+# double-logistic for this step?
 for (i in 1:length(trainIDs)) {
   site = train %>% filter(ID == trainIDs[i])
   pars = as.vector(dlog.data %>% filter(ID == trainIDs[i]) %>% dplyr::select(mn, mx, sos, rsp, eos, rau))
@@ -218,7 +214,7 @@ for (i in 1:length(trainIDs)) {
                             DOY = 1:365,
                             preds = predictDLOG(pars, 1:365))
   
-  site_VI <- site_preds$preds # time series VI
+  site_VI <- site_preds$preds # VI time-series for the site. 
   
   # We will use MACD(5, 10, 5). (Gao et al. 2020)
   # I.e., S = 5 days ("fast" EMA), L = 10 days ("slow" EMA), 
@@ -228,41 +224,45 @@ for (i in 1:length(trainIDs)) {
   site_preds$ema_macd_c <- macd_t[,2]
   site_preds$macd_div_t <- site_preds$macd_t - site_preds$ema_macd_c
   
-  # Settings (0.0, 0.0) for (MACD_threshold, MACD_div_threshold) are
-  # standard settings to track trend changes in stock prices. 
-  macd_threshold <- 0.0
-  macd_div_threshold <- 0.0
-  # The settings of 0.01 and 0.85 for NDVI at the green-up dates represent
-  # a wide range of acceptable green-up conditions since NDVI and EVI2 at 
-  # green-up time are very low.
+  # Settings (0.0, 0.0) for (MACD_threshold, MACD_div_threshold) are standard 
+  # settings to track trend changes in stock prices. 
+  # We adjust to use settings (0.1, 0.01) here (the fitted DL has uniform tails).
+  macd_threshold <- 0.1
+  macd_div_threshold <- 0.01
+  
+  # The settings of 0.01 and 0.85 for NDVI at the green-up dates represent a 
+  # wide range of acceptable green-up conditions since NDVI and EVI2 at green-up
+  # time are very low.
   min_VI_greenup <- 0.01
-  max_VI_greenup <- 0.85
+  max_VI_greenup <- 0.90
   VI_increase_doys <- c()
   
   max_ndvi_doy <- site_preds[which.max(site_preds$preds),]$DOY
   
+  # We check for momentum points with the various conditions described by 
+  # Gao et al. (2020).
+  # (ex:
+  #   -- Is the NDVI at this doy within a reasonable range of NDVI values?, 
+  #   -- Does the MACD begin to increase exponentially?, 
+  #   -- Is the MACD within a reasonable range? 
+  # )
   for (j in 11:max_ndvi_doy) {
-    in_VI_range <- site_preds$preds[j] > min_VI_greenup && site_preds$preds[j] < max_VI_greenup
+    in_VI_range <-
+      site_preds$preds[j] > min_VI_greenup &&
+      site_preds$preds[j] < max_VI_greenup
     macd_div_x_intercept <-
       (
         site_preds$macd_div_t[j - 1] < macd_div_threshold &&
           site_preds$macd_div_t[j] > macd_div_threshold
       ) 
-    #macd_within_range <- macd_t[j] < macd_threshold
+    macd_within_range <- macd_t[j] < macd_threshold
     
-    #||
-     # (
-      #  site_preds$macd_div_t[j - 1] > macd_div_threshold &&
-      #    site_preds$macd_div_t[j] < macd_div_threshold
-    #  )
-    
-    if (in_VI_range && macd_div_x_intercept) {
+    if (in_VI_range && macd_div_x_intercept && macd_within_range) {
      VI_increase_doys <- c(VI_increase_doys, j)
     }
   }
   
   momentums <- data.frame(DOY = VI_increase_doys, NDVI = NA)
-  
   for (k in 1:length(VI_increase_doys)) {
     site_row <- site_preds[VI_increase_doys[k],]
     momentums[k,]$NDVI = site_row$preds
@@ -274,6 +274,8 @@ for (i in 1:length(trainIDs)) {
   ## Use a horizontal line to mark actual planting date
   site_dos <- (temp %>% filter(ID == trainIDs[i]))[1,]$dos
   
+  # Plot the fitted DL for the site, along with observed planting date and 
+  # predicted emergence date.
   ggplot(site_preds) +
     geom_line(aes(x = DOY, y = preds), linetype = 'solid') +
     geom_line(aes(x = DOY, y = macd_t), linetype = 'solid', color = 'blue') +
