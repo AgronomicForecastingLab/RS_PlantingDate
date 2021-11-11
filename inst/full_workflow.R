@@ -125,27 +125,18 @@ rm(cornIDs)
 # 1: Fit the double-logistic function to each site
 # Store the DLF parameters in the `dlog.data` df: 
 dlog.data = data.frame(
-  ID = NULL,
-  mn = NULL,
-  # winter NDVI (minimum)
-  mx = NULL,
-  # maximum NDVI
-  sos = NULL,
-  # start of season
-  rsp = NULL,
-  # initial slope
-  eos = NULL,
-  # end of season
-  rau = NULL,
-  # ending slope
-  dos = NULL,
-  # day of sowing
-  lat = NULL,
-  # latitude
-  lon = NULL,
-  # longitude
-  maxDOY = NULL
-  # day of year where NDVI is at maximum following model
+  ID = NULL, # Beck's ID of site
+  mn = NULL, # Winter NDVI (minimum)
+  mx = NULL, # Maximum NDVI
+  sos = NULL, # Start of season
+  rsp = NULL, # Initial slope
+  eos = NULL, # End of season
+  rau = NULL, # Ending slope
+  dos = NULL, # Day of sowing
+  lat = NULL, # Latitude
+  lon = NULL, # Longitude
+  maxDOY = NULL, # Day of year where NDVI is at maximum following model
+  doe = NULL # Day of emergence
 ) 
 
 # Iterate through all training plots, fit a double logistic, 
@@ -285,57 +276,55 @@ for (i in 1:length(trainIDs)) {
     geom_vline(xintercept = site_dos, linetype = 'dashed', color = 'green') +
     geom_point(aes(x = momentums$DOY, y = momentums$NDVI)) + 
     ggtitle(toString(site_preds[1,]$ID))
+  
+  # Store 'doe' for the site (a.k.a. day of emergence).
+  dlog.data[dlog.data$ID == trainIDs[i], ]$doe <- emerg_row$DOY 
 }
 
 ##############################
 # III. Use climate data to estimate planting date from emergence  
 ##############################
 
-load('inst/data/finalSiteLocations.Rdata')
-
 # Open the NetCDF so we can extract met data by variable:
 met_nc_data <- nc_open('inst/data/met_data.nc')
 met_nc_fname <- 'inst/data/met_data.nc'
-# "mx2t": max. air temperature
-met_nc_mx2t.b <- brick(met_nc_fname, varname="mx2t")
-# "mn2t": min. air temperature
-met_nc_mn2t.b <- brick(met_nc_fname, varname="mn2t")
 
-# Extract site-specific time-series data from the raster brick 
-met_df_71030 <- get_site_met(siteLoc, 71030, met_nc_mx2t.b, met_nc_mn2t.b)
-# Remove the NA column from `site_df`
-site_df <- site_df[,-c(1)]
+met_nc_mx2t.b <- brick(met_nc_fname, varname="mx2t") # "mx2t" (max. air temp.)
+met_nc_mn2t.b <- brick(met_nc_fname, varname="mn2t") # "mn2t" (min. air temp.)
 
-# Remove the .nc data variable and close the met. ncfile
+# Extract site-specific time-series data from the raster brick. 
+for (i in 1:length(trainIDs)) {
+  met_df <- get_site_met(train, trainIDs[i], met_nc_mx2t.b, met_nc_mn2t.b)
+  
+  # Calculate GDD (Growing Degree Days)
+  # https://ndawn.ndsu.nodak.edu/help-corn-growing-degree-days.html
+  # Daily Corn GDD (°C) = ((Daily Max Temp °C + Daily Min Temp °C)/2) - 10 °C
+  # Following constraints:
+  #   -- If daily Max Temp > 30 °C, set it equal to 30 °C.
+  #   -- If daily Max or Min Temp < 10 °C, set it equal to 10°C. 
+  gdd_list <- c()
+  for (i in 1:nrow(site_df)) {
+    max_temp <- site_df[i,]$mx2t$mx2t
+    min_temp <- site_df[i,]$mn2t$mx2t
+    
+    if (max_temp > 30) {
+      max_temp = 30
+    } else if (max_temp < 10) {
+      max_temp = 10
+    } 
+    if (min_temp < 10) {
+      min_temp = 10
+    }
+    
+    gdd <- ((max_temp + min_temp)/2) - 10
+    gdd_list <- c(gdd_list, gdd)
+  }
+  site_df$GDD <- gdd_list
+}
+
+# Remove the met. data variable and close the met. ncfile. 
 rm(met_nc_data)
 nc_close('inst/data/met_data.nc')
-
-# Calculate GDD (Growing Degree Days)
-# https://ndawn.ndsu.nodak.edu/help-corn-growing-degree-days.html
-
-# Daily Corn GDD (°C) = ((Daily Max Temp °C + Daily Min Temp °C)/2) - 10 °C
-# Following constraints:
-#   --> If daily Max Temp > 30 °C, it's set equal to 30 °C.
-#   --> If daily Max or Min Temp < 10 °C, it's set equal to 10°C. 
-
-gdd_list <- c()
-for (i in 1:nrow(site_df)) {
-  max_temp <- site_df[i,]$mx2t$mx2t
-  min_temp <- site_df[i,]$mn2t$mx2t
-  
-  if (max_temp > 30) {
-    max_temp = 30
-  } else if (max_temp < 10) {
-    max_temp = 10
-  } 
-  if (min_temp < 10) {
-    min_temp = 10
-  }
-  
-  gdd <- ((max_temp + min_temp)/2) - 10
-  gdd_list <- c(gdd_list, gdd)
-}
-site_df$GDD <- gdd_list
 
 ################################################
 # IV. Apply the final model to the test dataset to evaluate performance 
