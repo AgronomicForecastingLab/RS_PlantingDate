@@ -1,16 +1,14 @@
 #' Extracts ERA5 met. data for the site with "site_id" in the provided 
 #' "sites_df" dataframe from the met. data dataframe "met_df". 
 #'
-#' @param sites_df
-#' @param site_id
+#' @param site_row
 #' @param mx2t_brick
 #' @param mn2t_brick
 #' @return A data frame with a column from the aggregated time series data.
 #' @export
-get_site_met <- function(sites_df, site_id, mx2t_brick, mn2t_brick) {
+get_site_met <- function(site_row, mx2t_brick, mn2t_brick) {
   # Establish a data frame for met. data at the site corresponding to `site_id`:
   site_df <- data.frame(matrix(NA, nrow = 366, ncol = 1))
-  site_row <- sites_df[sites_df$ID == site_id,][1,] # Find site with ID `site_id`
 
   # Retrieve site lon., lat. coordinates (rounded to 2 digits).
   t_lat <- round(site_row$Latitude, digits=2)

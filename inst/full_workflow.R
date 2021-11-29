@@ -93,19 +93,15 @@ save(temp, file = 'inst/data/organized/cleaned_corn_data.Rdata')
 
 # Figure: Generate 16 plots comparing uncleaned and cleaned data.
 cornIDs = unique(temp$ID)
-#samples = sample(cornIDs, 16)
-#compare_cleaned_plots(samples, before %>% dplyr::select(-X.1, -DOY, -class, -Year, -DAS), temp)
 rm(quants, this, vals, finalIDs, IDs, incs, mn, std, i, mid)
 
-# 5: Now, we need to extract the needed met information for each location. 
-## THIS PART STILL NEEDS TO BE DONE. 
-
 # 6: We split the data into 2 halves: test and train. 
-# We can use the train dataset to explore and fit the data. 
-# We can use the test dataset to see how the final model works. 
-# Randomly select training and test data.
-# Setting a seed in the script is important here so we can always get the same datasets 
-# if we have to rerun this script. 
+#  - We can use the train dataset to explore and fit the data. 
+#  - We can use the test dataset to see how the final model works.
+#
+# Note: We need to randomly select training and test data.
+#  - Setting a seed in the script is important here so we can always get the 
+#    same datasets if we have to rerun this script. 
 
 trainIDs = sample(cornIDs, length(cornIDs) / 2, replace = FALSE)
 temp = temp %>% mutate(
@@ -135,8 +131,7 @@ dlog.data = data.frame(
   dos = NULL, # Day of sowing
   lat = NULL, # Latitude
   lon = NULL, # Longitude
-  maxDOY = NULL, # Day of year where NDVI is at maximum following model
-  doe = NULL # Day of emergence
+  maxDOY = NULL # Day of year where NDVI is at maximum following model
 ) 
 
 # Iterate through all training plots, fit a double logistic, 
@@ -150,7 +145,7 @@ for (i in 1:length(trainIDs)) {
   if (any(!is.na(res))) dlog.data = rbind(dlog.data, res)
 }
 
-# ggpairs(dlog.data %>% dplyr::select(mn,mx,sos,eos,rau,rsp,lat,lon,dos))
+dlog.data$doe <- NA
 
 # 2: Limit our fits to the ones that are actually reasonable by setting limits on some of the parameters 
 bounds = list(
@@ -179,29 +174,33 @@ for (i in 1:length(ids)){
                             DOY = 1:365,
                             preds = predictDLOG(pars, 1:365)))
 }
-check = temp %>% mutate(Date = as.Date(Date)) %>% filter(ID %in% ids)
-
+check <- temp %>% mutate(Date = as.Date(Date)) %>% filter(ID %in% ids)
 
 # Dashed line shows fitted double logistic function for each plot 
-ggplot(site_preds) +
-  geom_point(aes(x = DOY, y = preds)) + 
+ggplot(check) +
+  geom_point(aes(x = DOY, y = NDVI)) + 
+  geom_line(data = fitted, aes(x = DOY, y = preds), linetype = 'dashed')+
   scale_linetype_manual(values = c('cleaned'='dashed', 'fitted'='solid')) +
-  labs(color = 'Data Cleaning',
-       linetype = NULL)
+  facet_wrap(~ID, nrow = 4) +
+  labs(color = 'Data Cleaning',linetype = NULL)
 
 ########################
 # Predicting Emergence # ------------------------------------------------------
 ########################
 
-# Predict and plot emergence of a sample of 10 sites.
-emerg_sample <- sample(1:length(trainIDs), 10)
-
 # We can either use Sentinel/Harmonized Sentinel Landsat-8 data or the fitted 
 # double-logistic for this step?
-for (i in 1:length(trainIDs)) {
-  site = train %>% filter(ID == trainIDs[i])
-  pars = as.vector(dlog.data %>% filter(ID == trainIDs[i]) %>% dplyr::select(mn, mx, sos, rsp, eos, rau))
-  site_preds = data.frame(ID = rep(trainIDs[i], 365),
+pb = txtProgressBar(0, 1, style=3)
+
+for (i in 1:nrow(dlog.data)) {
+  setTxtProgressBar(pb, i/nrow(dlog.data))
+  
+  site_id <- dlog.data[i,]$ID
+  site = train %>% filter(ID == site_id)
+  pars = as.vector(dlog.data %>% filter(ID == site_id)
+                   %>% dplyr::select(mn, mx, sos, rsp, eos, rau))
+  
+  site_preds = data.frame(ID = rep(site_id, 365),
                             DOY = 1:365,
                             preds = predictDLOG(pars, 1:365))
   
@@ -219,7 +218,7 @@ for (i in 1:length(trainIDs)) {
   # settings to track trend changes in stock prices. 
   # We adjust to use settings (0.1, 0.01) here (the fitted DL has uniform tails).
   macd_threshold <- 0.1
-  macd_div_threshold <- 0.01
+  macd_div_threshold <- 0.0001
   
   # The settings of 0.01 and 0.85 for NDVI at the green-up dates represent a 
   # wide range of acceptable green-up conditions since NDVI and EVI2 at green-up
@@ -246,11 +245,16 @@ for (i in 1:length(trainIDs)) {
         site_preds$macd_div_t[j - 1] < macd_div_threshold &&
           site_preds$macd_div_t[j] > macd_div_threshold
       ) 
-    macd_within_range <- macd_t[j] < macd_threshold
     
+    macd_within_range <- macd_t[j] < macd_threshold
     if (in_VI_range && macd_div_x_intercept && macd_within_range) {
      VI_increase_doys <- c(VI_increase_doys, j)
     }
+  }
+  
+  if (length(VI_increase_doys) == 0) {
+    print(i)
+    next
   }
   
   momentums <- data.frame(DOY = VI_increase_doys, NDVI = NA)
@@ -265,21 +269,44 @@ for (i in 1:length(trainIDs)) {
   ## Use a horizontal line to mark actual planting date
   site_dos <- (temp %>% filter(ID == trainIDs[i]))[1,]$dos
   
-  # Plot the fitted DL for the site, along with observed planting date and 
-  # predicted emergence date.
-  ggplot(site_preds) +
-    geom_line(aes(x = DOY, y = preds), linetype = 'solid') +
-    geom_line(aes(x = DOY, y = macd_t), linetype = 'solid', color = 'blue') +
-    geom_line(aes(x = DOY, y = macd_div_t), linetype = 'solid', color = 'red') +
-    geom_line(aes(x = DOY, y = ema_macd_c), linetype = 'dotted', color = 'purple') + 
-    geom_vline(xintercept = emerg_row$DOY, linetype = 'dashed', color = 'red') + 
-    geom_vline(xintercept = site_dos, linetype = 'dashed', color = 'green') +
-    geom_point(aes(x = momentums$DOY, y = momentums$NDVI)) + 
-    ggtitle(toString(site_preds[1,]$ID))
-  
   # Store 'doe' for the site (a.k.a. day of emergence).
-  dlog.data[dlog.data$ID == trainIDs[i], ]$doe <- emerg_row$DOY 
+  dlog.data[dlog.data$ID == site_id,]$doe <- emerg_row$DOY 
 }
+
+# Take a random sample of 10 predicted site emergences to plot.
+ids <- sample(dlog.data$ID, 10, replace = FALSE, prob = NULL)
+
+fitted = data.frame(ID = NULL, DOY = NULL, pred = NULL)
+for (i in 1:length(ids)){
+  pars = as.vector(dlog.data %>% filter(ID == ids[i]) %>% dplyr::select(mn, mx, sos, rsp, eos, rau))
+ 
+  fitted = rbind(fitted, 
+                 data.frame(ID = rep(ids[i], 365),
+                            DOY = 1:365,
+                            preds = predictDLOG(pars, 1:365)))
+}
+
+sample_sites <- temp %>% mutate(Date = as.Date(Date)) %>% filter(ID %in% ids)
+sample_sites$doe <- NA
+for (i in 1:nrow(sample_sites)) {
+  dlog_row <- dlog.data %>% filter(ID == sample_sites[i,]$ID)
+  sample_sites[i,]$doe <- dlog_row$doe
+}
+
+p <- ggplot(sample_sites) +
+  geom_point(aes(x = DOY, y = NDVI)) +
+  geom_line(aes(x = doe, y = NDVI), linetype = 'solid', color='red') + 
+  geom_line(aes(x = dos, y = NDVI), linetype = 'solid', color='green') +
+  geom_line(data = fitted, aes(x = DOY, y = preds), linetype = 'dashed') +
+  scale_linetype_manual(values = c('cleaned'='dashed', 'fitted'='solid')) +
+  facet_wrap(~ID, nrow = 2) +
+  labs(color = 'Data Cleaning',linetype = NULL) +
+  ylim(0.1, 0.9) + 
+  ggtitle("Site DOE Pred Sample")
+
+p + theme(
+  plot.title = element_text(color="red", size=14, face="bold.italic",
+                            hjust = 0.5))
 
 ##############################
 # III. Use climate data to estimate planting date from emergence  
@@ -292,20 +319,56 @@ met_nc_fname <- 'inst/data/met_data.nc'
 met_nc_mx2t.b <- brick(met_nc_fname, varname="mx2t") # "mx2t" (max. air temp.)
 met_nc_mn2t.b <- brick(met_nc_fname, varname="mn2t") # "mn2t" (min. air temp.)
 
-# Extract site-specific time-series data from the raster brick. 
-for (i in 1:length(trainIDs)) {
-  met_df <- get_site_met(train, trainIDs[i], met_nc_mx2t.b, met_nc_mn2t.b)
+# We will calculate the AGDD (accumulated growing degree days) between the 
+# observed planting date (dos) and the predicted emergence date (doe).
+dlog.data$AGDD <- NA
+pb = txtProgressBar(0, 1, style=3)
+
+for (i in 1:nrow(dlog.data)) {
+  setTxtProgressBar(pb, i/nrow(dlog.data))
   
-  # Calculate GDD (Growing Degree Days)
-  # https://ndawn.ndsu.nodak.edu/help-corn-growing-degree-days.html
-  # Daily Corn GDD (°C) = ((Daily Max Temp °C + Daily Min Temp °C)/2) - 10 °C
-  # Following constraints:
-  #   -- If daily Max Temp > 30 °C, set it equal to 30 °C.
-  #   -- If daily Max or Min Temp < 10 °C, set it equal to 10°C. 
-  gdd_list <- c()
-  for (i in 1:nrow(site_df)) {
-    max_temp <- site_df[i,]$mx2t$mx2t
-    min_temp <- site_df[i,]$mn2t$mx2t
+  site_id <- dlog.data[i,]$ID
+  site_rows <- train %>% filter(ID == site_id)
+  site_row <- site_rows[1,]
+
+  met_df <- get_site_met(site_row, met_nc_mx2t.b, met_nc_mn2t.b)
+  met_df$doy <- NA
+  met_df$year <- NA
+  
+  for (j in 1:nrow(met_df)) {
+    date <- rownames(met_df[j,]$mx2t)
+    year <- substr(date, 2, 5)
+    month <- substr(date, 7, 8)
+    day <- substr(date, 10, 11)
+    str_date <- paste(year, month, day, sep="-")
+    tmp <- as.POSIXlt(str_date, format = "%Y-%m-%d", tz = "GMT")
+    julian_days <- tmp$yday
+    met_df[j,]$doy <- julian_days
+    met_df[j,]$year <- year
+  }
+  
+  dos_year <- substr(site_row$Date, 1, 4)
+  met_df_year <- met_df %>% filter(year == as.integer(dos_year))
+  
+  # Keep only the weather obsv. within the [DOS, DOE] interval:
+  met_df_year <- met_df_year %>% filter(doy <= dlog.data[i,]$doe)
+  met_df_year <- met_df_year %>% filter(doy >= site_row$dos)
+  
+  # If we predicted emergence before the observed planting date, we set the
+  # AGDD to 0. 
+  if (nrow(met_df_year) == 0) {
+    dlog.data[i,]$AGDD <- 0
+    next
+  }
+  
+  AGDD_sum <- 0
+  for (j in 1:nrow(met_df_year)) {
+    max_temp <- met_df_year[j,]$mx2t$mx2t
+    min_temp <- met_df_year[j,]$mn2t$mn2t
+    
+    if (is.na(max_temp) || is.na(min_temp)) {
+      next
+    }
     
     if (max_temp > 30) {
       max_temp = 30
@@ -315,16 +378,17 @@ for (i in 1:length(trainIDs)) {
     if (min_temp < 10) {
       min_temp = 10
     }
-    
     gdd <- ((max_temp + min_temp)/2) - 10
-    gdd_list <- c(gdd_list, gdd)
+    AGDD_sum <- AGDD_sum + gdd
   }
-  site_df$GDD <- gdd_list
+  dlog.data[i,]$AGDD <- AGDD_sum
 }
 
 # Remove the met. data variable and close the met. ncfile. 
 rm(met_nc_data)
 nc_close('inst/data/met_data.nc')
+
+write.csv(dlog.data, file = "inst/data/dlog_data.csv", row.names = FALSE)
 
 ################################################
 # IV. Apply the final model to the test dataset to evaluate performance 
