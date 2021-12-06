@@ -22,10 +22,11 @@ def harmonized_landsat_data(values, headers):
     try:
         url = 'https://ag-analytics.azure-api.net/hls-service/'
         response = requests.post(url, data = values, headers = headers).json()
+        print(response)
         return response
     
     except Exception as e:
+        print(e)
         raise e
 
 hlsresponse = harmonized_landsat_data(values, headers)
-print(hlsresponse[0].keys())
