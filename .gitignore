@@ -3,4 +3,6 @@
 .Ruserdata
 .DS_Store
 .Rproj.user
+/lib
+/bin
 *.nc
