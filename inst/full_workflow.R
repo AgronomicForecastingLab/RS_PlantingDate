@@ -388,7 +388,7 @@ for (i in 1:nrow(dlog.data)) {
 rm(met_nc_data)
 nc_close('inst/data/met_data.nc')
 
-write.csv(dlog.data, file = "inst/data/dlog_data.csv", row.names = FALSE)
+write.csv(dlog.data, file = "inst/dlog_data.csv", row.names = FALSE)
 
 ################################################
 # IV. Apply the final model to the test dataset to evaluate performance 
@@ -485,6 +485,100 @@ pred.data %>%
 # }
 # plotDat$cat = sapply(plotDat$value,categorize)
 # plotDat$cat = factor(plotDat$cat, levels = c('< -20','-20-0','0-20','20-40','> 40'))
+
+long_enough <- c()
+
+for (i in 1:length(trainIDs)) {
+  id = IDs[i]
+  blah = temp %>% filter(ID == id)
+  if (nrow(blah) > 20) {
+    long_enough <- c(long_enough, id)
+  }
+}
+
+sentinel_preds <- data.frame(
+  ID = c(long_enough)
+)
+sentinel_preds$dos <- NA
+sentinel_preds$doe <- NA
+
+pb = txtProgressBar(0, 1, style=3)
+
+for (i in 1:length(long_enough)) {
+  setTxtProgressBar(pb, i/length(long_enough))
+
+  site_id <- long_enough[i]
+  sentinel_preds[i,]$ID = site_id
+  
+  site = train %>% filter(ID == site_id)
+ # site_VI <- site$preds # VI time-series for the site. 
+  
+  # We will use MACD(5, 10, 5). (Gao et al. 2020)
+  # I.e., S = 5 days ("fast" EMA), L = 10 days ("slow" EMA), 
+  # K = 5 days ("signal"/"average" EMA)
+  macd_t <- MACD_VI(site_VI, 5, 10, 10)
+  site_preds$macd_t <- macd_t[,1]
+  site_preds$ema_macd_c <- macd_t[,2]
+  site_preds$macd_div_t <- site_preds$macd_t - site_preds$ema_macd_c
+  
+  # Settings (0.0, 0.0) for (MACD_threshold, MACD_div_threshold) are standard 
+  # settings to track trend changes in stock prices. 
+  # We adjust to use settings (0.1, 0.01) here (the fitted DL has uniform tails).
+  macd_threshold <- 0.1
+  macd_div_threshold <- 0.0001
+  
+  # The settings of 0.01 and 0.85 for NDVI at the green-up dates represent a 
+  # wide range of acceptable green-up conditions since NDVI and EVI2 at green-up
+  # time are very low.
+  min_VI_greenup <- 0.01
+  max_VI_greenup <- 0.90
+  VI_increase_doys <- c()
+  
+  max_ndvi_doy <- site_preds[which.max(site_preds$preds),]$DOY
+  
+  # We check for momentum points with the various conditions described by 
+  # Gao et al. (2020).
+  # (ex:
+  #   -- Is the NDVI at this doy within a reasonable range of NDVI values?, 
+  #   -- Does the MACD begin to increase exponentially?, 
+  #   -- Is the MACD within a reasonable range? 
+  # )
+  for (j in 11:max_ndvi_doy) {
+    in_VI_range <-
+      site_preds$preds[j] > min_VI_greenup &&
+      site_preds$preds[j] < max_VI_greenup
+    macd_div_x_intercept <-
+      (
+        site_preds$macd_div_t[j - 1] < macd_div_threshold &&
+          site_preds$macd_div_t[j] > macd_div_threshold
+      ) 
+    
+    macd_within_range <- macd_t[j] < macd_threshold
+    if (in_VI_range && macd_div_x_intercept && macd_within_range) {
+      VI_increase_doys <- c(VI_increase_doys, j)
+    }
+  }
+  
+  if (length(VI_increase_doys) == 0) {
+    print(i)
+    next
+  }
+  
+  momentums <- data.frame(DOY = VI_increase_doys, NDVI = NA)
+  for (k in 1:length(VI_increase_doys)) {
+    site_row <- site_preds[VI_increase_doys[k],]
+    momentums[k,]$NDVI = site_row$preds
+  }
+  
+  ## Use a horizontal line to mark `macd_div_t` peak
+  emerg_row <- site_preds[VI_increase_doys[1],]
+  
+  ## Use a horizontal line to mark actual planting date
+  site_dos <- (temp %>% filter(ID == trainIDs[i]))[1,]$dos
+  
+  # Store 'doe' for the site (a.k.a. day of emergence).
+  dlog.data[dlog.data$ID == site_id,]$doe <- emerg_row$DOY 
+}
 
 
 
