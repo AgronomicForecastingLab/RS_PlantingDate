@@ -598,7 +598,8 @@ L8S2.data = data.frame(ID = NULL,
                        NDVI = NULL, 
                        Satellite = NULL)
 
-for (site_id in IDs) {
+for (i in 1:nrow(IDs)) {
+  site_id <- IDs[i]
   print(site_id)
   
   this <- temp %>% filter(ID == site_id)
@@ -638,5 +639,7 @@ for (site_id in IDs) {
   L8S2.data <- rbind(L8S2.data, RS)
 }
 
+# Write the `L8S2.data` data frame to a csv file.
+write.csv(L8S2.data, "inst/data/L8S2_data.csv", row.names = FALSE)
 
 
