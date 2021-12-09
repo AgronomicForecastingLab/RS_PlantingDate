@@ -7,7 +7,7 @@ from collections import defaultdict
 import pandas as pd
 import zipfile, io
 
-values={"aoi": '{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[-92.329005, 41.6850758], [-92.3290479, 41.681366], [-92.3240805, 41.6813179], [-92.3255289, 41.6841784], [-92.329005, 41.6850758]]]}}',
+values={"aoi": '{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[-92.8005803, 43.2758463], [-92.8005803, 43.2748463], [-92.7995803, 43.2748463], [-92.7995803, 43.2758463], [-92.8005803, 43.2758463]]]}}',
 "Band": "['NDVI']",
 "Enddate": "3/8/2019",
 "Startdate": "3/2/2019",
@@ -26,7 +26,6 @@ def harmonized_landsat_data(values, headers):
         return response
     
     except Exception as e:
-        print(e)
         raise e
 
 hlsresponse = harmonized_landsat_data(values, headers)

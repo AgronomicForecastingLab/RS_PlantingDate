@@ -580,6 +580,63 @@ for (i in 1:length(long_enough)) {
   dlog.data[dlog.data$ID == site_id,]$doe <- emerg_row$DOY 
 }
 
+# --------------------------------------------------------------------------- #
+# 12/08/2021 (Alex):
+
+###############################################################################
+# ??. Retrieve L8S2 (Landsat 8, Sentinel 2) data for training and test sites 
+###############################################################################
+
+# Retrieve Landsat 8 data frame: 
+require(L8S2)
+require(devtools)
+require(remotes)
+require(tidyverse)
+
+L8S2.data = data.frame(ID = NULL,
+                       Date = NULL,
+                       NDVI = NULL, 
+                       Satellite = NULL)
+
+for (site_id in IDs) {
+  print(site_id)
+  
+  this <- temp %>% filter(ID == site_id)
+  lat <- round(this[1,]$Latitude, 7)
+  lon <- round(this[1,]$Longitude, 7)
+  year <- substr(this[1,]$Date, 1, 4)
+  
+  # This package doesn't currently work for "2017" sites... 
+  if (year == "2017") {
+    next
+  }
+  
+  request_ID = paste("Site", site_id, sep="_")
+  mysites <- data.frame(x= c(lon),  # lon.
+                        y= c(lat),  # lat.
+                        ID= c(request_ID) # Site ID
+  )
+  
+  start_date <- paste(year, '-01-01', sep="")
+  end_date <- paste(year, '-12-31', sep="")
+  
+  # This should take a few minutes:
+  RS <- DownloadL8S2(mysites, start_date, end_date, Indices = c("NDVI"))
+  
+  # Clean/re-organize the `RS` data frame: 
+  RS <- subset(RS, select = -c(...1, Index))
+  site_col <- rep(site_id, nrow(RS))
+  RS$ID <- site_col
+  # Order the data by observation date. 
+  RS <- RS[order(RS$date),]
+  # Rename the "date" and "Value" columns:
+  names(RS)[names(RS) == "date"] <- "Date"
+  names(RS)[names(RS) == "Value"] <- "NDVI"
+  # Reorder the columns of the `RS` data frame:
+  RS <- subset(RS, select=c(3,2,4,1))
+  
+  L8S2.data <- rbind(L8S2.data, RS)
+}
 
 
 
