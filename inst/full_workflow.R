@@ -388,7 +388,7 @@ for (i in 1:nrow(dlog.data)) {
 rm(met_nc_data)
 nc_close('inst/data/met_data.nc')
 
-write.csv(dlog.data, file = "inst/data/dlog_data.csv", row.names = FALSE)
+write.csv(dlog.data, file = "inst/dlog_data.csv", row.names = FALSE)
 
 
 ################################################
@@ -487,6 +487,160 @@ write.csv(dlog.data, file = "inst/data/dlog_data.csv", row.names = FALSE)
 # plotDat$cat = sapply(plotDat$value,categorize)
 # plotDat$cat = factor(plotDat$cat, levels = c('< -20','-20-0','0-20','20-40','> 40'))
 
+long_enough <- c()
 
+for (i in 1:length(trainIDs)) {
+  id = IDs[i]
+  blah = temp %>% filter(ID == id)
+  if (nrow(blah) > 20) {
+    long_enough <- c(long_enough, id)
+  }
+}
+
+sentinel_preds <- data.frame(
+  ID = c(long_enough)
+)
+sentinel_preds$dos <- NA
+sentinel_preds$doe <- NA
+
+pb = txtProgressBar(0, 1, style=3)
+
+for (i in 1:length(long_enough)) {
+  setTxtProgressBar(pb, i/length(long_enough))
+
+  site_id <- long_enough[i]
+  sentinel_preds[i,]$ID = site_id
+  
+  site = train %>% filter(ID == site_id)
+ # site_VI <- site$preds # VI time-series for the site. 
+  
+  # We will use MACD(5, 10, 5). (Gao et al. 2020)
+  # I.e., S = 5 days ("fast" EMA), L = 10 days ("slow" EMA), 
+  # K = 5 days ("signal"/"average" EMA)
+  macd_t <- MACD_VI(site_VI, 5, 10, 10)
+  site_preds$macd_t <- macd_t[,1]
+  site_preds$ema_macd_c <- macd_t[,2]
+  site_preds$macd_div_t <- site_preds$macd_t - site_preds$ema_macd_c
+  
+  # Settings (0.0, 0.0) for (MACD_threshold, MACD_div_threshold) are standard 
+  # settings to track trend changes in stock prices. 
+  # We adjust to use settings (0.1, 0.01) here (the fitted DL has uniform tails).
+  macd_threshold <- 0.1
+  macd_div_threshold <- 0.0001
+  
+  # The settings of 0.01 and 0.85 for NDVI at the green-up dates represent a 
+  # wide range of acceptable green-up conditions since NDVI and EVI2 at green-up
+  # time are very low.
+  min_VI_greenup <- 0.01
+  max_VI_greenup <- 0.90
+  VI_increase_doys <- c()
+  
+  max_ndvi_doy <- site_preds[which.max(site_preds$preds),]$DOY
+  
+  # We check for momentum points with the various conditions described by 
+  # Gao et al. (2020).
+  # (ex:
+  #   -- Is the NDVI at this doy within a reasonable range of NDVI values?, 
+  #   -- Does the MACD begin to increase exponentially?, 
+  #   -- Is the MACD within a reasonable range? 
+  # )
+  for (j in 11:max_ndvi_doy) {
+    in_VI_range <-
+      site_preds$preds[j] > min_VI_greenup &&
+      site_preds$preds[j] < max_VI_greenup
+    macd_div_x_intercept <-
+      (
+        site_preds$macd_div_t[j - 1] < macd_div_threshold &&
+          site_preds$macd_div_t[j] > macd_div_threshold
+      ) 
+    
+    macd_within_range <- macd_t[j] < macd_threshold
+    if (in_VI_range && macd_div_x_intercept && macd_within_range) {
+      VI_increase_doys <- c(VI_increase_doys, j)
+    }
+  }
+  
+  if (length(VI_increase_doys) == 0) {
+    print(i)
+    next
+  }
+  
+  momentums <- data.frame(DOY = VI_increase_doys, NDVI = NA)
+  for (k in 1:length(VI_increase_doys)) {
+    site_row <- site_preds[VI_increase_doys[k],]
+    momentums[k,]$NDVI = site_row$preds
+  }
+  
+  ## Use a horizontal line to mark `macd_div_t` peak
+  emerg_row <- site_preds[VI_increase_doys[1],]
+  
+  ## Use a horizontal line to mark actual planting date
+  site_dos <- (temp %>% filter(ID == trainIDs[i]))[1,]$dos
+  
+  # Store 'doe' for the site (a.k.a. day of emergence).
+  dlog.data[dlog.data$ID == site_id,]$doe <- emerg_row$DOY 
+}
+
+# --------------------------------------------------------------------------- #
+# 12/08/2021 (Alex):
+
+###############################################################################
+# ??. Retrieve L8S2 (Landsat 8, Sentinel 2) data for training and test sites 
+###############################################################################
+
+# Retrieve Landsat 8 data frame: 
+require(L8S2)
+require(devtools)
+require(remotes)
+require(tidyverse)
+
+L8S2.data = data.frame(ID = NULL,
+                       Date = NULL,
+                       NDVI = NULL, 
+                       Satellite = NULL)
+
+for (i in 1:nrow(IDs)) {
+  site_id <- IDs[i]
+  print(site_id)
+  
+  this <- temp %>% filter(ID == site_id)
+  lat <- round(this[1,]$Latitude, 7)
+  lon <- round(this[1,]$Longitude, 7)
+  year <- substr(this[1,]$Date, 1, 4)
+  
+  # This package doesn't currently work for "2017" sites... 
+  if (year == "2017") {
+    next
+  }
+  
+  request_ID = paste("Site", site_id, sep="_")
+  mysites <- data.frame(x= c(lon),  # lon.
+                        y= c(lat),  # lat.
+                        ID= c(request_ID) # Site ID
+  )
+  
+  start_date <- paste(year, '-01-01', sep="")
+  end_date <- paste(year, '-12-31', sep="")
+  
+  # This should take a few minutes:
+  RS <- DownloadL8S2(mysites, start_date, end_date, Indices = c("NDVI"))
+  
+  # Clean/re-organize the `RS` data frame: 
+  RS <- subset(RS, select = -c(...1, Index))
+  site_col <- rep(site_id, nrow(RS))
+  RS$ID <- site_col
+  # Order the data by observation date. 
+  RS <- RS[order(RS$date),]
+  # Rename the "date" and "Value" columns:
+  names(RS)[names(RS) == "date"] <- "Date"
+  names(RS)[names(RS) == "Value"] <- "NDVI"
+  # Reorder the columns of the `RS` data frame:
+  RS <- subset(RS, select=c(3,2,4,1))
+  
+  L8S2.data <- rbind(L8S2.data, RS)
+}
+
+# Write the `L8S2.data` data frame to a csv file.
+write.csv(L8S2.data, "inst/data/L8S2_data.csv", row.names = FALSE)
 
 
