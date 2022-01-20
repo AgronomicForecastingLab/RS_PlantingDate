@@ -14,7 +14,7 @@ require(ggplot2)
 require(RNetCDF)
 require(raster)
 
-install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies=TRUE)
+#install_github("AgronomicForecastingLab/RS_PlantingDate", dependencies=TRUE)
 
 # Data cleaning and fitting workflow with the double logistic function
 rm(list=ls())
@@ -390,62 +390,63 @@ nc_close('inst/data/met_data.nc')
 
 write.csv(dlog.data, file = "inst/data/dlog_data.csv", row.names = FALSE)
 
+
 ################################################
 # IV. Apply the final model to the test dataset to evaluate performance 
 ################################################
 
-# Organize test data
-testIDs = unique(test$ID)
-
-# Predictions
-pred.data = data.frame(ID = NULL,
-                       obs = NULL,
-                       emerg = NULL, 
-                       pred = NULL)
-
-pb = txtProgressBar(0, 1, style=3)
-for (i in 1:length(testIDs)){
-  setTxtProgressBar(pb, i/length(testIDs))
-  
-  # get the data for this plot 
-  this = test %>% filter(ID == testIDs[i]) %>% distinct(DOY, .keep_all = TRUE)
-  if (nrow(this) == 0) next
-  
-  # first, fit the double logistic function
-  res = fit_double_logistic(x = this$NDVI, t= this$DOY)
-  if (any(is.na(res))) next 
-  
-  # check if the fit is bad 
-  res = res %>% filter(sos > bounds$sos$lower, sos < bounds$sos$upper,
-                       eos > bounds$eos$lower, eos < bounds$eos$upper, 
-                       mn > bounds$mn$lower, mn < bounds$mn$upper,
-                       mx > bounds$mx$lower, mx < bounds$mx$upper)
-  if (nrow(res) == 0) next
-  
-  # second, estimate emergence
-  
-  
-  # third, estimate planting date 
-  
-  
-  # save the predictions (need to add those predicted values to the save function)
-  pred.data = rbind(pred.data,
-                    data.frame(ID = testIDs[i],
-                               obs = this$dos[1],
-                               emerg = NA, 
-                               pred = NA))
-}
-
-# Figure: observed vs. predicted planting date 
-ggplot(pred.data) + geom_point(aes(x = obs, y = pred)) + 
-  geom_abline(slope = 1, linetype = 'dashed') 
-
-# Calculate RMSE of prediction 
-pred.data %>% 
-  mutate(sqerror1 = (norm-obs)^2,
-         sqerror2 = (dlog-obs)^2) %>%
-  dplyr::summarize(norm_RMSE = sqrt(mean(sqerror1)),
-                   dlog_RMSE = sqrt(mean(sqerror2)))
+# # Organize test data
+# testIDs = unique(test$ID)
+# 
+# # Predictions
+# pred.data = data.frame(ID = NULL,
+#                        obs = NULL,
+#                        emerg = NULL, 
+#                        pred = NULL)
+# 
+# pb = txtProgressBar(0, 1, style=3)
+# for (i in 1:length(testIDs)){
+#   setTxtProgressBar(pb, i/length(testIDs))
+#   
+#   # get the data for this plot 
+#   this = test %>% filter(ID == testIDs[i]) %>% distinct(DOY, .keep_all = TRUE)
+#   if (nrow(this) == 0) next
+#   
+#   # first, fit the double logistic function
+#   res = fit_double_logistic(x = this$NDVI, t= this$DOY)
+#   if (any(is.na(res))) next 
+#   
+#   # check if the fit is bad 
+#   res = res %>% filter(sos > bounds$sos$lower, sos < bounds$sos$upper,
+#                        eos > bounds$eos$lower, eos < bounds$eos$upper, 
+#                        mn > bounds$mn$lower, mn < bounds$mn$upper,
+#                        mx > bounds$mx$lower, mx < bounds$mx$upper)
+#   if (nrow(res) == 0) next
+#   
+#   # second, estimate emergence
+#   
+#   
+#   # third, estimate planting date 
+#   
+#   
+#   # save the predictions (need to add those predicted values to the save function)
+#   pred.data = rbind(pred.data,
+#                     data.frame(ID = testIDs[i],
+#                                obs = this$dos[1],
+#                                emerg = NA, 
+#                                pred = NA))
+# }
+# 
+# # Figure: observed vs. predicted planting date 
+# ggplot(pred.data) + geom_point(aes(x = obs, y = pred)) + 
+#   geom_abline(slope = 1, linetype = 'dashed') 
+# 
+# # Calculate RMSE of prediction 
+# pred.data %>% 
+#   mutate(sqerror1 = (norm-obs)^2,
+#          sqerror2 = (dlog-obs)^2) %>%
+#   dplyr::summarize(norm_RMSE = sqrt(mean(sqerror1)),
+#                    dlog_RMSE = sqrt(mean(sqerror2)))
 
 ################################################
 # 4. This is just some old code in case we end up needing some of this stuff later on 
