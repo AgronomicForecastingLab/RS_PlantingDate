@@ -598,8 +598,12 @@ L8S2.data = data.frame(ID = NULL,
                        NDVI = NULL, 
                        Satellite = NULL)
 
-for (i in 1:nrow(IDs)) {
+blah <- temp %>% filter(temp$Year == "2017")
+IDs <- unique(blah$ID)
+
+for (i in 41:94) {
   site_id <- IDs[i]
+  site_id <- toString(site_id)
   print(site_id)
   
   this <- temp %>% filter(ID == site_id)
@@ -607,22 +611,14 @@ for (i in 1:nrow(IDs)) {
   lon <- round(this[1,]$Longitude, 7)
   year <- substr(this[1,]$Date, 1, 4)
   
-  # This package doesn't currently work for "2017" sites... 
-  if (year == "2017") {
-    next
-  }
-  
   request_ID = paste("Site", site_id, sep="_")
   mysites <- data.frame(x= c(lon),  # lon.
                         y= c(lat),  # lat.
                         ID= c(request_ID) # Site ID
   )
   
-  start_date <- paste(year, '-01-01', sep="")
-  end_date <- paste(year, '-12-31', sep="")
-  
   # This should take a few minutes:
-  RS <- DownloadL8S2(mysites, start_date, end_date, Indices = c("NDVI"))
+  RS <- DownloadL8S2(mysites, '2017-04-01', '2018-12-31', Indices = c("NDVI"))
   
   # Clean/re-organize the `RS` data frame: 
   RS <- subset(RS, select = -c(...1, Index))
@@ -635,11 +631,25 @@ for (i in 1:nrow(IDs)) {
   names(RS)[names(RS) == "Value"] <- "NDVI"
   # Reorder the columns of the `RS` data frame:
   RS <- subset(RS, select=c(3,2,4,1))
+  RS <- RS %>% filter(substr(RS$Date,1,4) == "2017")
+  #RS <- as.data.frame(RS)
   
   L8S2.data <- rbind(L8S2.data, RS)
 }
 
 # Write the `L8S2.data` data frame to a csv file.
 write.csv(L8S2.data, "inst/data/L8S2_data.csv", row.names = FALSE)
+
+# Read the `L8S2.data` data frame to a csv file.
+L8S2.data <- read.csv(file = "inst/data/L8S2_data.csv")
+# Convert the `L8S2.data` data column into a double (as.Date).
+L8S2.data$Date <- as.Date(L8S2.data$Date)
+
+
+
+
+
+
+
 
 
