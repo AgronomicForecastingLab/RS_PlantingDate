@@ -645,11 +645,48 @@ L8S2.data <- read.csv(file = "inst/data/L8S2_data.csv")
 # Convert the `L8S2.data` data column into a double (as.Date).
 L8S2.data$Date <- as.Date(L8S2.data$Date)
 
+## Clean L8S2 data:
+ndvi <- c(L8S2.data$NDVI)
+ndvi_mean <- mean(ndvi)
+ndvi_sd <- sd(ndvi)
+idx_remove <- c()
+z_scores <- c()
 
+# Remove any NDVI observations +/-3 SDs away from the mean:
+for (i in 1:nrow(L8S2.data)) {
+  obs <- L8S2.data[i,]$NDVI
+  z_score <- abs((obs - ndvi_mean)/(ndvi_sd))
+  z_scores <- c(z_score, z_scores)
+  
+  if (z_score > 3) {
+    idx_remove <- c(i, idx_remove)
+  }
+}
 
-
-
-
-
+to_remove <- c()
+# Remove any sites with fewer than 7 NDVI observations:
+for (i in 1:length(IDs)) {
+  id <- IDs[i]
+  temp <- L8S2.data %>% filter(ID == id)
+  if (nrow(temp) < 7) {
+    to_remove <- c(id, to_remove)
+  }
+}
+# Remove empty date rows for ID _____:
+# nrow(L8S2.data) = 10707
+L8S2.data <- L8S2.data[-c(9297:9335),]
+# nrow(L8S2.data) = 10668
+# 68199
+L8S2.data <- L8S2.data %>% filter(ID != 68199)
+# nrow(L8S2.data) = 10663
+# 68104
+L8S2.data <- L8S2.data %>% filter(ID != 68104)
+# nrow(L8S2.data) = 10658
+# 68220
+L8S2.data <- L8S2.data %>% filter(ID != 68220)
+# nrow(L8S2.data) = 10652
+# 57913
+L8S2.data <- L8S2.data %>% filter(ID != 57913)
+# nrow(L8S2.data) = 10646
 
 
