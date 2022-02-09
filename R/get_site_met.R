@@ -15,14 +15,14 @@ get_site_met <- function(site_row, mx2t_brick, mn2t_brick) {
   t_lon <- round(site_row$Longitude, digits=2)
   
   # Extract and aggregate "mx2t" data for the site.
-  site_series <- extract(mx2t_brick, SpatialPoints(cbind(t_lon, t_lat)), method='simple')
+  site_series <- raster::extract(mx2t_brick, SpatialPoints(cbind(t_lon, t_lat)), method='simple')
   t_mx2t_df <- data.frame(mx2t=t(site_series))
   agg_mx2t_df <- aggregate_met(site_series, t_mx2t_df)
   site_df$mx2t <- agg_mx2t_df
   site_df$mx2t <- site_df$mx2t - 273.15 # Convert units from to K to C
   
   # Extract and aggregate "mn2t" data for the site.
-  site_series <- extract(mn2t_brick, SpatialPoints(cbind(t_lon, t_lat)), method='simple')
+  site_series <- raster::extract(mn2t_brick, SpatialPoints(cbind(t_lon, t_lat)), method='simple')
   t_mn2t_df <- data.frame(mn2t=t(site_series))
   agg_mn2t_df <- aggregate_met(site_series, t_mn2t_df)
   site_df$mn2t <- agg_mn2t_df
