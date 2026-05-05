@@ -1,8 +1,17 @@
+# R
 .Rhistory
 .RData
 .Ruserdata
+.Rproj.user/
+*.Rproj
+# macOS
 .DS_Store
-.Rproj.user
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+# Build dirs
 /lib
 /bin
+# Large data
 *.nc
